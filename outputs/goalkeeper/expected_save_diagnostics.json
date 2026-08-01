@@ -1,0 +1,17 @@
+{
+  "observations": 510,
+  "matches": 64,
+  "save_rate": 0.6686274509803921,
+  "brier_score": 0.17939112144976938,
+  "intercept_brier_score": 0.22156478277585545,
+  "log_loss": 0.540101166189446,
+  "group_leakage_count": 0,
+  "folds": 8,
+  "category_counts": {
+    "routine_save": 294,
+    "understandable_goal": 85,
+    "unexpected_goal": 84,
+    "heroic_save": 47
+  },
+  "roc_auc": 0.7579690780683337
+}
