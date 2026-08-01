@@ -1,0 +1,77 @@
+{
+  "seed": 20260730,
+  "bootstrap_draws": 10000,
+  "unique_scorers": 117,
+  "observed_spearman_rho": 0.14120811808660214,
+  "observed_spearman_p": 0.1288580956058286,
+  "athlete_bootstrap_spearman_median": 0.14272684981862926,
+  "athlete_bootstrap_spearman_ci_95": [
+    -0.03671962510217135,
+    0.3162541870189595
+  ],
+  "spearman_bootstrap_method": "paired nonparametric bootstrap of athlete rank pairs",
+  "topk": [
+    {
+      "top_share": 0.05,
+      "top_k": 6,
+      "observed_overlap_n": 1,
+      "observed_overlap_percent_of_k": 16.666666666666668,
+      "observed_jaccard": 0.09090909090909091,
+      "bootstrap_overlap_median": 1.0,
+      "bootstrap_overlap_ci_low": 1.0,
+      "bootstrap_overlap_ci_high": 2.0,
+      "bootstrap_jaccard_median": 0.09090909090909091,
+      "bootstrap_jaccard_ci_low": 0.09090909090909091,
+      "bootstrap_jaccard_ci_high": 0.2,
+      "bootstrap_draws": 10000,
+      "bootstrap_method": "match-weighted Bayesian bootstrap over scoring appearances"
+    },
+    {
+      "top_share": 0.1,
+      "top_k": 12,
+      "observed_overlap_n": 3,
+      "observed_overlap_percent_of_k": 25.0,
+      "observed_jaccard": 0.14285714285714285,
+      "bootstrap_overlap_median": 3.0,
+      "bootstrap_overlap_ci_low": 2.0,
+      "bootstrap_overlap_ci_high": 3.0,
+      "bootstrap_jaccard_median": 0.14285714285714285,
+      "bootstrap_jaccard_ci_low": 0.09090909090909091,
+      "bootstrap_jaccard_ci_high": 0.14285714285714285,
+      "bootstrap_draws": 10000,
+      "bootstrap_method": "match-weighted Bayesian bootstrap over scoring appearances"
+    },
+    {
+      "top_share": 0.15,
+      "top_k": 18,
+      "observed_overlap_n": 3,
+      "observed_overlap_percent_of_k": 16.666666666666668,
+      "observed_jaccard": 0.09090909090909091,
+      "bootstrap_overlap_median": 3.0,
+      "bootstrap_overlap_ci_low": 2.0,
+      "bootstrap_overlap_ci_high": 4.0,
+      "bootstrap_jaccard_median": 0.09090909090909091,
+      "bootstrap_jaccard_ci_low": 0.058823529411764705,
+      "bootstrap_jaccard_ci_high": 0.125,
+      "bootstrap_draws": 10000,
+      "bootstrap_method": "match-weighted Bayesian bootstrap over scoring appearances"
+    },
+    {
+      "top_share": 0.2,
+      "top_k": 24,
+      "observed_overlap_n": 5,
+      "observed_overlap_percent_of_k": 20.833333333333332,
+      "observed_jaccard": 0.11627906976744186,
+      "bootstrap_overlap_median": 6.0,
+      "bootstrap_overlap_ci_low": 5.0,
+      "bootstrap_overlap_ci_high": 7.0,
+      "bootstrap_jaccard_median": 0.14285714285714285,
+      "bootstrap_jaccard_ci_low": 0.11627906976744186,
+      "bootstrap_jaccard_ci_high": 0.17073170731707318,
+      "bootstrap_draws": 10000,
+      "bootstrap_method": "match-weighted Bayesian bootstrap over scoring appearances"
+    }
+  ],
+  "topk_bootstrap_method": "match-weighted Bayesian bootstrap over scoring appearances with shared Dirichlet match weights",
+  "interpretation": "Observed scorer rankings are weakly positively related, while overlap remains limited across multiple decision thresholds. Bootstrap results are conditional on the recorded scoring appearances."
+}
