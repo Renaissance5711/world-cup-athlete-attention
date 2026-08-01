@@ -13,7 +13,9 @@ permissions:
 
 env:
   PYTHONUNBUFFERED: '1'
-  PANEL_URL: 'https://drive.usercontent.google.com/download?id=1S_NZtREGyBk0f4_igBEPu93m5KlUtQqP&export=download&confirm=t'
+  PAYLOAD_URL: 'https://drive.usercontent.google.com/download?id=1S_NZtREGyBk0f4_igBEPu93m5KlUtQqP&export=download&confirm=t'
+  PAYLOAD_SHA256: 'a787edfd42cdc86530086d7e4d883cd5b3c436906d0feee9c125e3a486d3d883'
+  PAYLOAD_BYTES: '278000'
   V3_URL: 'https://zenodo.org/records/19734532/files/science_compot.csv?download=1'
   V3_MD5: '295811c017331132f777538d1c081804'
   V3_BYTES: '2550924405'
@@ -31,18 +33,25 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: pip
 
-      - name: Reconstruct and verify analysis code
+      - name: Download and verify runtime payload
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p runtime
-          cat tem_stage2_v5_payload/code/part_*.b64 | tr -d '\r\n\t ' | base64 --decode > runtime/code.tar.gz
-          sha256sum runtime/code.tar.gz | tee runtime/code.sha256
-          gzip -t runtime/code.tar.gz
-          mkdir -p runtime/code
-          tar -xzf runtime/code.tar.gz -C runtime/code
+          mkdir -p runtime/outputs
+          curl --location --fail --show-error --silent \
+            --retry 10 --retry-all-errors --retry-delay 5 \
+            --output runtime/payload.tar.gz "${PAYLOAD_URL}"
+          test "$(stat -c%s runtime/payload.tar.gz)" = "${PAYLOAD_BYTES}"
+          echo "${PAYLOAD_SHA256}  runtime/payload.tar.gz" | sha256sum --check --strict
+          gzip -t runtime/payload.tar.gz
+          tar -xzf runtime/payload.tar.gz -C runtime
+          mv runtime/tem_stage2_v5_runtime_payload/code runtime/code
+          mv runtime/tem_stage2_v5_runtime_payload/data runtime/data
+          rmdir runtime/tem_stage2_v5_runtime_payload
+          test "$(stat -c%s runtime/data/stage1_panel.csv)" = "${PANEL_BYTES}"
+          head -n 1 runtime/data/stage1_panel.csv | grep -q '^author_id,work_id,doi,publication_year,publication_date,work_type,firm_participation'
+          sha256sum runtime/payload.tar.gz runtime/data/stage1_panel.csv | tee runtime/outputs/runtime_payload.sha256
           find runtime/code -maxdepth 3 -type f | sort
 
       - name: Install dependencies
@@ -53,19 +62,9 @@ jobs:
 
       - name: Run V5 regression tests
         working-directory: runtime/code
+        env:
+          PYTHONPATH: '.'
         run: pytest -q tests_v5
-
-      - name: Download and verify Stage 1 panel
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p runtime/data runtime/outputs
-          curl --location --fail --show-error --silent \
-            --retry 10 --retry-all-errors --retry-delay 5 \
-            --output runtime/data/stage1_panel.csv "${PANEL_URL}"
-          test "$(stat -c%s runtime/data/stage1_panel.csv)" = "${PANEL_BYTES}"
-          head -n 1 runtime/data/stage1_panel.csv | grep -q '^author_id,work_id,doi,publication_year,publication_date,work_type,firm_participation'
-          sha256sum runtime/data/stage1_panel.csv | tee runtime/outputs/stage1_panel.sha256
 
       - name: Download and verify official V3 COMPOT
         shell: bash
@@ -82,6 +81,8 @@ jobs:
 
       - name: Reconstruct the 1,881-project V3 input
         working-directory: runtime/code
+        env:
+          PYTHONPATH: '.'
         shell: bash
         run: |
           set -euo pipefail
@@ -114,6 +115,8 @@ jobs:
         id: stage2
         continue-on-error: true
         working-directory: runtime/code
+        env:
+          PYTHONPATH: '.'
         shell: bash
         run: |
           set +e
