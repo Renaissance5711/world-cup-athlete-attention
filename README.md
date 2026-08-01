@@ -66,6 +66,7 @@ The compact versioned outputs are `outputs/r25/rank_reversal_summary.json`, `out
 ```bash
 python -m pytest -q -W error::FutureWarning
 sha256sum -c SHA256SUMS_PUBLIC.txt
+sha256sum -c outputs/r25/SHA256SUMS_R25.txt
 ```
 
 ## Data and licensing
