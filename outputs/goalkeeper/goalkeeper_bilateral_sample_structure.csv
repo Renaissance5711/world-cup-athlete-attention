@@ -1,0 +1,8 @@
+metric,value
+on_target_shots,510
+bilateral_pairs,386
+single_shot_pairs,303
+multi_shot_pairs,83
+mixed_outcome_pairs,43
+single_shot_goals,94
+single_shot_saves,209
