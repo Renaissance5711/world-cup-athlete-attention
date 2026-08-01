@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.env
+.DS_Store
+data/raw/statsbomb/combined/events/
+data/raw/statsbomb/combined/lineups/
+base_archive/data/raw/pageviews/
+base_archive/data/processed/
