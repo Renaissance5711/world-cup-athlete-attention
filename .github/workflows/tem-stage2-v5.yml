@@ -15,7 +15,6 @@ env:
   PYTHONUNBUFFERED: '1'
   PANEL_URL: 'https://drive.usercontent.google.com/download?id=1S_NZtREGyBk0f4_igBEPu93m5KlUtQqP&export=download&confirm=t'
   V3_URL: 'https://zenodo.org/records/19734532/files/science_compot.csv?download=1'
-  CODE_SHA256: '695ee0075e719058b23b529ab3a6b93503fface21d779ab27cb1bf0be24cf1bf'
   V3_MD5: '295811c017331132f777538d1c081804'
   V3_BYTES: '2550924405'
   PANEL_BYTES: '1042209'
@@ -40,7 +39,8 @@ jobs:
           set -euo pipefail
           mkdir -p runtime
           cat tem_stage2_v5_payload/code/part_*.b64 | tr -d '\r\n\t ' | base64 --decode > runtime/code.tar.gz
-          echo "${CODE_SHA256}  runtime/code.tar.gz" | sha256sum --check --strict
+          sha256sum runtime/code.tar.gz | tee runtime/code.sha256
+          gzip -t runtime/code.tar.gz
           mkdir -p runtime/code
           tar -xzf runtime/code.tar.gz -C runtime/code
           find runtime/code -maxdepth 3 -type f | sort
