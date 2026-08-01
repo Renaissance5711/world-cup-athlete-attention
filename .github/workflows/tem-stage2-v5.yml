@@ -1,0 +1,162 @@
+name: TEM Stage 2 V5 Full Expansion
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/tem-stage2-v5.yml'
+      - 'tem_stage2_v5_payload/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+  PANEL_URL: 'https://drive.usercontent.google.com/download?id=1S_NZtREGyBk0f4_igBEPu93m5KlUtQqP&export=download&confirm=t'
+  V3_URL: 'https://zenodo.org/records/19734532/files/science_compot.csv?download=1'
+  CODE_SHA256: '695ee0075e719058b23b529ab3a6b93503fface21d779ab27cb1bf0be24cf1bf'
+  V3_MD5: '295811c017331132f777538d1c081804'
+  V3_BYTES: '2550924405'
+  PANEL_BYTES: '1042209'
+
+jobs:
+  full-stage2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Check out run branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Reconstruct and verify analysis code
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime
+          cat tem_stage2_v5_payload/code/part_*.b64 | tr -d '\r\n\t ' | base64 --decode > runtime/code.tar.gz
+          echo "${CODE_SHA256}  runtime/code.tar.gz" | sha256sum --check --strict
+          mkdir -p runtime/code
+          tar -xzf runtime/code.tar.gz -C runtime/code
+          find runtime/code -maxdepth 3 -type f | sort
+
+      - name: Install dependencies
+        working-directory: runtime/code
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Run V5 regression tests
+        working-directory: runtime/code
+        run: pytest -q tests_v5
+
+      - name: Download and verify Stage 1 panel
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/data runtime/outputs
+          curl --location --fail --show-error --silent \
+            --retry 10 --retry-all-errors --retry-delay 5 \
+            --output runtime/data/stage1_panel.csv "${PANEL_URL}"
+          test "$(stat -c%s runtime/data/stage1_panel.csv)" = "${PANEL_BYTES}"
+          head -n 1 runtime/data/stage1_panel.csv | grep -q '^author_id,work_id,doi,publication_year,publication_date,work_type,firm_participation'
+          sha256sum runtime/data/stage1_panel.csv | tee runtime/outputs/stage1_panel.sha256
+
+      - name: Download and verify official V3 COMPOT
+        shell: bash
+        run: |
+          set -euo pipefail
+          touch runtime/data/science_compot.csv
+          curl --location --fail --show-error \
+            --retry 30 --retry-all-errors --retry-delay 10 \
+            --continue-at - --output runtime/data/science_compot.csv "${V3_URL}"
+          test "$(stat -c%s runtime/data/science_compot.csv)" = "${V3_BYTES}"
+          echo "${V3_MD5}  runtime/data/science_compot.csv" | md5sum --check --strict
+          test "$(head -n 1 runtime/data/science_compot.csv | tr -d '\r')" = 'doi,compot'
+          sha256sum runtime/data/science_compot.csv | tee runtime/outputs/science_compot_v3.sha256
+
+      - name: Reconstruct the 1,881-project V3 input
+        working-directory: runtime/code
+        shell: bash
+        run: |
+          set -euo pipefail
+          python prepare_v3_stage2_input.py \
+            --panel ../data/stage1_panel.csv \
+            --compot ../data/science_compot.csv \
+            --output-dir ../outputs/v3_input \
+            2>&1 | tee ../outputs/v3_input_build.log
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path('../outputs/v3_input/v3_stage2_input_audit.json').read_text())
+          assert a['count_assertions']=={
+            'matched_rows':7839,'matched_unique_dois':7709,'strict_rows':6602,
+            'strict_authors':273,'strict_projects':6536,'stage2_projects':1881,
+          }, a
+          print(json.dumps(a['count_assertions'],indent=2))
+          PY
+
+      - name: Restore restartable OpenAlex cache
+        id: cache-openalex
+        uses: actions/cache@v4
+        with:
+          path: runtime/openalex_cache
+          key: tem-stage2-v5-openalex-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            tem-stage2-v5-openalex-
+
+      - name: Run full relationship-transition extraction and models
+        id: stage2
+        continue-on-error: true
+        working-directory: runtime/code
+        shell: bash
+        run: |
+          set +e
+          mkdir -p ../outputs/stage2_v5 ../openalex_cache
+          python run_stage2_v5_relationship_transition.py \
+            --projects ../outputs/v3_input/risk_set_full_firm_projects_input_v3.csv \
+            --strict-panel ../outputs/v3_input/author_project_panel_v3_strict.csv \
+            --cache-dir ../openalex_cache \
+            --output-dir ../outputs/stage2_v5 \
+            --bootstrap-reps 1000 \
+            --field-top-n 100 \
+            --cognitive-batch-size 20 \
+            2>&1 | tee ../outputs/stage2_v5.log
+          code=${PIPESTATUS[0]}
+          echo "$code" | tee ../outputs/stage2_v5_exit_code.txt
+          exit "$code"
+
+      - name: Record run diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          mkdir -p runtime/outputs
+          {
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "commit=${GITHUB_SHA}"
+            echo "cache_hit=${{ steps.cache-openalex.outputs.cache-hit }}"
+            echo "stage2_outcome=${{ steps.stage2.outcome }}"
+            echo "utc_finished=$(date -u +%FT%TZ)"
+          } | tee runtime/outputs/github_run_metadata.txt
+          if [ -f runtime/outputs/stage2_v5/run_status.json ]; then
+            cat runtime/outputs/stage2_v5/run_status.json
+          fi
+          du -sh runtime/openalex_cache runtime/outputs 2>/dev/null || true
+          find runtime/outputs -maxdepth 3 -type f -printf '%p\t%s bytes\n' | sort || true
+
+      - name: Upload results and diagnostic checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tem-stage2-v5-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/outputs
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6
