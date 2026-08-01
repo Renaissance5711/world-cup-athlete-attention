@@ -1,0 +1,42 @@
+{
+  "on_target_shots": 510,
+  "matches": 64,
+  "goalkeepers": 40,
+  "shooters": 248,
+  "bilateral_pairs": 386,
+  "single_shot_pairs": 303,
+  "multi_shot_pairs": 83,
+  "mixed_outcome_pairs": 43,
+  "performance_category_counts": {
+    "routine_save": 294,
+    "understandable_goal": 85,
+    "unexpected_goal": 84,
+    "heroic_save": 47
+  },
+  "raw_indexed_headlines": 1714,
+  "retained_post_match_headlines": 59,
+  "covered_goalkeeper_matches": 31,
+  "covered_matches": 26,
+  "headline_framing_counts": {
+    "neutral": 48,
+    "praise": 7,
+    "blame": 4
+  },
+  "expected_save": {
+    "observations": 510,
+    "matches": 64,
+    "save_rate": 0.6686274509803921,
+    "brier_score": 0.17939112144976938,
+    "intercept_brier_score": 0.22156478277585545,
+    "log_loss": 0.540101166189446,
+    "group_leakage_count": 0,
+    "folds": 8,
+    "category_counts": {
+      "routine_save": 294,
+      "understandable_goal": 85,
+      "unexpected_goal": 84,
+      "heroic_save": 47
+    },
+    "roc_auc": 0.7579690780683337
+  }
+}
