@@ -9,3 +9,5 @@ data/raw/statsbomb/combined/events/
 data/raw/statsbomb/combined/lineups/
 base_archive/data/raw/pageviews/
 base_archive/data/processed/
+outputs/r25/rank_reversal_pairs.csv
+outputs/r25/rank_reversal_bootstrap_draws.csv
