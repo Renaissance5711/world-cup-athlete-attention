@@ -1,28 +1,32 @@
-# World Cup athlete attention replication materials
+# World Cup athlete attention replication archive
 
-This public repository contains the principal analysis code, documentation, selected automated tests, and compact derived outputs for a study of athlete attention following performances at the 2022 FIFA World Cup.
+This repository contains the code, data derivatives, tests and model outputs used to reproduce analyses of athlete attention following performances at the 2022 FIFA World Cup.
 
-## Research scope
+## Scope
 
-The analyses distinguish four quantities that should not be treated as interchangeable:
+The repository supports:
 
-1. proportional change in athlete attention;
-2. additional pageview volume;
-3. persistence of attention after the event; and
-4. relative attention across shooter and goalkeeper roles.
+- player-match proportional and additive attention estimates;
+- player-day persistence models;
+- opportunity-adjusted shooter comparisons;
+- shooter and goalkeeper relational analyses;
+- observed scorer rankings, full-ranking reversal decomposition and bootstrap uncertainty;
+- overlapping-window and structural-zero sensitivity analyses.
 
-The mathematical distinction between proportional and additive change is not presented as a new mathematical result. The empirical contribution is to show that these estimands operate as different athlete-selection rules, generate different observed priority lists, and have temporal and relational boundaries.
+The central measurement distinction is between proportional pageview response and additional pageviews. These are treated as different selection rules for identifying athletes for subsequent evaluation, not as a new mathematical identity.
 
-## Repository contents
+## Repository structure
 
-- `ijsms/`: shot, shot-opportunity, goalkeeper, headline-audit, and workflow modules.
-- `code/`: ranking and sensitivity scripts.
-- `tests/`: selected synthetic and mapping tests for the public modules.
-- `outputs/`: compact diagnostic, ranking, model, and sensitivity results used to audit the reported findings.
-- `docs/`: analysis design, data dictionaries, and source documentation.
-- `base_archive/`: the core pageview-pipeline entry point and licensing notes.
+- `base_archive/`: core processing code, licensed Fjelstul and Wikimedia inputs, processed panels, metadata and outputs;
+- `code/`: ranking and sensitivity scripts;
+- `data/raw/news/`: Google News-indexed metadata and links only; no article bodies;
+- `data/raw/statsbomb/manifest.json`: audit metadata for the StatsBomb retrieval;
+- `ijsms/`: shot-opportunity and goalkeeper analysis modules;
+- `outputs/`: model, ranking and sensitivity outputs;
+- `docs/`: analysis design, source documentation and data dictionaries;
+- `tests/`: automated tests.
 
-The anonymous manuscript, submission tables, submission figures, compressed archives, large raw event files, full processed pageview panels, and Google News-indexed record files are intentionally excluded from this public repository.
+The large StatsBomb event and lineup JSON files are not committed. They can be retrieved from the official StatsBomb Open Data repository using `ijsms.statsbomb_acquisition.download_statsbomb_world_cup`.
 
 ## Installation
 
@@ -30,41 +34,44 @@ The anonymous manuscript, submission tables, submission figures, compressed arch
 python -m pip install -r requirements.txt
 ```
 
-## Main workflows
+## Retrieve StatsBomb Open Data
 
 ```bash
-python base_archive/code/run_full_pipeline.py
+python - <<'PY'
+from pathlib import Path
+from ijsms.statsbomb_acquisition import download_statsbomb_world_cup
+
+download_statsbomb_world_cup(Path("data/raw/statsbomb/combined"))
+PY
+```
+
+## Reproduce analyses
+
+```bash
+python base_archive/code/run_full_pipeline.py --skip-download
 python run_near_miss_pipeline.py
 python run_goalkeeper_pipeline.py
 python code/run_fitted_ranking_analysis.py
 python code/run_sensitivity_analysis.py
 python code/run_observed_ranking_bootstrap.py
+python code/run_rank_reversal_decomposition.py
 ```
 
-The full workflows require source and processed inputs described in `docs/ANALYSIS_DESIGN.md`, `docs/NEAR_MISS_DATA_DICTIONARY.md`, `docs/GOALKEEPER_DATA_DICTIONARY.md`, and `docs/SOURCE_MANIFEST_V1.4.md`. StatsBomb acquisition and validation logic is provided in `ijsms/statsbomb_acquisition.py`.
+## Rank-reversal audit outputs
 
-## Tests
+The compact versioned outputs are `outputs/r25/rank_reversal_summary.json`, `outputs/r25/rank_reversal_decomposition_table.csv`, and `outputs/r25/rank_reversal_athlete_displacements.csv`. Running `code/run_rank_reversal_decomposition.py` also creates the complete pair-level file and all 10,000 bootstrap draws locally; those larger deterministic derivatives are intentionally not versioned.
 
-The included unit tests can be run with:
+## Verify
 
 ```bash
-python -m pytest tests/test_expected_save.py tests/test_statsbomb_mapping.py -q
+python -m pytest -q -W error::FutureWarning
+sha256sum -c SHA256SUMS_PUBLIC.txt
 ```
 
-Additional integration tests require the excluded raw and processed datasets.
+## Data and licensing
 
-## Key auditable results
+See `LICENSE.md`, `LICENSE_AND_THIRD_PARTY_TERMS.md`, `base_archive/docs/SOURCE_MANIFEST.md` and `docs/SOURCE_MANIFEST_V1.4.md`. Third-party terms remain controlling for their respective components.
 
-- `outputs/r24/observed_ranking_bootstrap_summary.json`: 117 scorers, observed Spearman correlation, and bootstrap intervals.
-- `outputs/r24/observed_ranking_topk_sensitivity.csv`: top-list overlap across 5%, 10%, 15%, and 20% thresholds.
-- `outputs/near_miss_primary_results.csv`: shot-opportunity-adjusted proportional and additive results.
-- `outputs/goalkeeper/goalkeeper_outcome_gradient_results.csv`: primary single-shot shooter-goalkeeper results.
-- `outputs/goalkeeper/expected_save_diagnostics.json`: cross-fitted expected-save performance and leakage checks.
+## Manuscript files
 
-## Data and licensing boundaries
-
-Some workflows retrieve public data from Wikimedia, Fjelstul, and StatsBomb. Review the source manifests and the current third-party terms before redistribution. `LICENSE_AND_THIRD_PARTY_TERMS.md` summarizes the archive boundaries but does not replace the original providers' terms.
-
-## Reproducibility note
-
-The compact outputs allow reported sample sizes, coefficient files, ranking summaries, and sensitivity results to be inspected without publishing the largest source archives. Re-running every workflow requires network access, source retrieval, and additional disk space.
+No manuscript, tables, figures or submission package is included in this public repository. This separation is intentional to preserve the integrity of anonymous journal review.
