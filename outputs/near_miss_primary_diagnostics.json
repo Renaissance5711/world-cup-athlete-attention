@@ -1,0 +1,12 @@
+{
+  "observations": 798,
+  "treated_observations": 131,
+  "control_observations": 667,
+  "treated_effective_sample_size": 101.74513806872712,
+  "control_effective_sample_size": 276.4034376028839,
+  "max_absolute_smd_unweighted": 1.229184928670316,
+  "max_absolute_smd_weighted": 0.01646313514264728,
+  "minimum_propensity": 0.01407485750302583,
+  "maximum_propensity": 0.9978248877039387,
+  "regularization_c": 1.0
+}
