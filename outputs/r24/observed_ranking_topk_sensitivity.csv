@@ -1,0 +1,5 @@
+top_share,top_k,observed_overlap_n,observed_overlap_percent_of_k,observed_jaccard,bootstrap_overlap_median,bootstrap_overlap_ci_low,bootstrap_overlap_ci_high,bootstrap_jaccard_median,bootstrap_jaccard_ci_low,bootstrap_jaccard_ci_high,bootstrap_draws,bootstrap_method
+0.05,6,1,16.666666666666668,0.09090909090909091,1.0,1.0,2.0,0.09090909090909091,0.09090909090909091,0.2,10000,match-weighted Bayesian bootstrap over scoring appearances
+0.1,12,3,25.0,0.14285714285714285,3.0,2.0,3.0,0.14285714285714285,0.09090909090909091,0.14285714285714285,10000,match-weighted Bayesian bootstrap over scoring appearances
+0.15,18,3,16.666666666666668,0.09090909090909091,3.0,2.0,4.0,0.09090909090909091,0.058823529411764705,0.125,10000,match-weighted Bayesian bootstrap over scoring appearances
+0.2,24,5,20.833333333333332,0.11627906976744186,6.0,5.0,7.0,0.14285714285714285,0.11627906976744186,0.17073170731707318,10000,match-weighted Bayesian bootstrap over scoring appearances
