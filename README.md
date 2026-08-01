@@ -1,6 +1,6 @@
 # World Cup athlete attention replication materials
 
-This public repository contains code, tests, documentation, selected public-source inputs, and derived outputs for a study of athlete attention following performances at the 2022 FIFA World Cup.
+This public repository contains the principal analysis code, documentation, selected automated tests, and compact derived outputs for a study of athlete attention following performances at the 2022 FIFA World Cup.
 
 ## Research scope
 
@@ -15,14 +15,14 @@ The mathematical distinction between proportional and additive change is not pre
 
 ## Repository contents
 
-- `ijsms/`: shot, near-miss, goalkeeper, and workflow modules.
+- `ijsms/`: shot, shot-opportunity, goalkeeper, headline-audit, and workflow modules.
 - `code/`: ranking and sensitivity scripts.
-- `tests/`: automated tests for the included workflows.
-- `outputs/`: selected derived model, ranking, and sensitivity outputs.
+- `tests/`: selected synthetic and mapping tests for the public modules.
+- `outputs/`: compact diagnostic, ranking, model, and sensitivity results used to audit the reported findings.
 - `docs/`: analysis design, data dictionaries, and source documentation.
-- `base_archive/`: core pageview pipeline code, tests, metadata, selected source tables, and published model outputs.
+- `base_archive/`: the core pageview-pipeline entry point and licensing notes.
 
-The anonymous manuscript, submission tables, submission figures, and compressed archives are intentionally excluded from this public repository.
+The anonymous manuscript, submission tables, submission figures, compressed archives, large raw event files, full processed pageview panels, and Google News-indexed record files are intentionally excluded from this public repository.
 
 ## Installation
 
@@ -41,18 +41,30 @@ python code/run_sensitivity_analysis.py
 python code/run_observed_ranking_bootstrap.py
 ```
 
-Some workflows download public data from Wikimedia and StatsBomb. Review the source manifests and current third-party terms before redistribution.
+The full workflows require source and processed inputs described in `docs/ANALYSIS_DESIGN.md`, `docs/NEAR_MISS_DATA_DICTIONARY.md`, `docs/GOALKEEPER_DATA_DICTIONARY.md`, and `docs/SOURCE_MANIFEST_V1.4.md`. StatsBomb acquisition and validation logic is provided in `ijsms/statsbomb_acquisition.py`.
 
 ## Tests
 
+The included unit tests can be run with:
+
 ```bash
-python -m pytest -q
+python -m pytest tests/test_expected_save.py tests/test_statsbomb_mapping.py -q
 ```
+
+Additional integration tests require the excluded raw and processed datasets.
+
+## Key auditable results
+
+- `outputs/r24/observed_ranking_bootstrap_summary.json`: 117 scorers, observed Spearman correlation, and bootstrap intervals.
+- `outputs/r24/observed_ranking_topk_sensitivity.csv`: top-list overlap across 5%, 10%, 15%, and 20% thresholds.
+- `outputs/near_miss_primary_results.csv`: shot-opportunity-adjusted proportional and additive results.
+- `outputs/goalkeeper/goalkeeper_outcome_gradient_results.csv`: primary single-shot shooter-goalkeeper results.
+- `outputs/goalkeeper/expected_save_diagnostics.json`: cross-fitted expected-save performance and leakage checks.
 
 ## Data and licensing boundaries
 
-The repository does not include the large StatsBomb event and lineup archive, the full processed Wikimedia panels, or Google News-indexed records. The code and manifests document how those inputs were acquired and processed. Third-party terms are summarized in `LICENSE_AND_THIRD_PARTY_TERMS.md` and the source manifests. Those summaries do not replace the original providers' terms.
+Some workflows retrieve public data from Wikimedia, Fjelstul, and StatsBomb. Review the source manifests and the current third-party terms before redistribution. `LICENSE_AND_THIRD_PARTY_TERMS.md` summarizes the archive boundaries but does not replace the original providers' terms.
 
 ## Reproducibility note
 
-The repository contains selected derived outputs so that reported sample sizes, coefficient files, ranking summaries, and sensitivity results can be inspected without downloading the largest source archives. Re-running every workflow may require network access and substantial disk space.
+The compact outputs allow reported sample sizes, coefficient files, ranking summaries, and sensitivity results to be inspected without publishing the largest source archives. Re-running every workflow requires network access, source retrieval, and additional disk space.
