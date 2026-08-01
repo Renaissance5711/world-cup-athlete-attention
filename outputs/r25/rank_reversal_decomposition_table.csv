@@ -1,0 +1,9 @@
+Statistic,Estimate,Percent_or_interval,Definition
+Total unordered athlete pairs,6786.0,100% of possible unordered pairs,All unique pairs among the 117 observed scorers.
+Comparable pairs,6780.0,99.9%,Pairs without a tie on either observed estimand.
+Observed rank reversals,3058.0,45.1%; bootstrap 95% CI 43.9-45.7%,Comparable pairs ordered in opposite directions by observed proportional and additive scores.
+Observed concordant pairs,3722.0,54.9%,Comparable pairs ordered in the same direction by both observed estimands.
+Pairs tied on either observed estimand,6.0,0.09%,Pairs excluded only from the concordant-versus-reversed denominator.
+Identity-observed agreement,6441.0,95.0%; bootstrap 95% CI 94.7-95.8%,Comparable pairs for which the denominator diagnostic and primary observed classification agree.
+Median absolute athlete rank displacement,34.0,ranks,Median absolute difference between additive and proportional rank positions.
+Athletes moving at least 25 ranks,75.0,64.1%,Athletes whose absolute rank displacement is 25 positions or more.
