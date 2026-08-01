@@ -1,0 +1,53 @@
+{
+  "total_pairs": 6786,
+  "comparable_pairs": 6780,
+  "tied_pairs": 6,
+  "observed_reversal_n": 3058,
+  "observed_concordant_n": 3722,
+  "observed_reversal_rate": 0.4510324483775811,
+  "identity_comparable_pairs": 6780,
+  "identity_tied_pairs": 6,
+  "identity_reversal_n": 3199,
+  "identity_concordant_n": 3581,
+  "identity_reversal_rate": 0.47182890855457227,
+  "identity_observed_agreement_n": 6441,
+  "identity_observed_agreement_denominator": 6780,
+  "identity_observed_agreement_rate": 0.95,
+  "aggregation_residual_n": 339,
+  "aggregation_residual_rate": 0.05,
+  "identity_reversal_dominance_margin_median": 1.281940921112051,
+  "identity_reversal_dominance_margin_q1": 0.605316342285757,
+  "identity_reversal_dominance_margin_q3": 2.285907084893844,
+  "median_absolute_rank_displacement": 34.0,
+  "mean_absolute_rank_displacement": 36.58119658119658,
+  "maximum_absolute_rank_displacement": 111,
+  "athletes_moving_at_least_10_ranks": 98,
+  "athletes_moving_at_least_25_ranks": 75,
+  "athletes_moving_at_least_50_ranks": 34,
+  "unique_scorers": 117,
+  "seed": 20260730,
+  "bootstrap_draws": 10000,
+  "observed_estimands": {
+    "proportional": "mean immediate_attention_log_lift across scoring appearances",
+    "additive": "mean winsorized_additional_pageviews across scoring appearances"
+  },
+  "denominator_diagnostic": "log1p(observed_additional_pageviews / baseline_views)",
+  "tie_rule": "Exact stored-precision ties are reported separately and excluded only from the concordant-versus-reversed denominator.",
+  "bootstrap_method": "Match-weighted Bayesian bootstrap over scoring appearances with shared Dirichlet match weights.",
+  "bootstrap_observed_reversal_rate_median": 0.44837758112094395,
+  "bootstrap_observed_reversal_rate_ci_95": [
+    0.43889134601208907,
+    0.45722713864306785
+  ],
+  "bootstrap_identity_reversal_rate_median": 0.4677526376116484,
+  "bootstrap_identity_reversal_rate_ci_95": [
+    0.4599734630694383,
+    0.4755162241887906
+  ],
+  "bootstrap_identity_agreement_rate_median": 0.9535398230088495,
+  "bootstrap_identity_agreement_rate_ci_95": [
+    0.9469026548672567,
+    0.9575409111012826
+  ],
+  "interpretation": "The observed decomposition quantifies ordering changes between primary observed estimands. The denominator diagnostic is an accounting comparison, while residual disagreement reflects aggregation, transformation, and winsorisation differences."
+}
