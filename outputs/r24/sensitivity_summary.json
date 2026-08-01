@@ -1,0 +1,34 @@
+{
+  "structural_zero_players": [
+    "P-02839",
+    "P-06789",
+    "P-09867",
+    "P-22631",
+    "P-32622",
+    "P-32773",
+    "P-93173"
+  ],
+  "n_structural_zero_players": 7,
+  "n_structural_zero_dates": 266,
+  "n_structural_zero_dates_analysis_period": 12,
+  "observed_ranking": {
+    "aggregation": "mean across scoring appearances",
+    "unique_scorers": 117,
+    "top_decile_n": 12,
+    "spearman_rho": 0.14120811808660214,
+    "spearman_p": 0.1288580956058286,
+    "top_decile_overlap_n": 3,
+    "top_decile_overlap_percent": 25.0,
+    "zero_coded_players_in_scorers": 1,
+    "first_scoring_appearance_spearman_rho": 0.17325312843421292,
+    "first_scoring_appearance_top_decile_overlap_n": 3
+  },
+  "overlap": {
+    "player_days": 42160,
+    "player_days_with_any_goal_window": 3838,
+    "player_days_with_more_than_one_goal_event_in_any_window": 420,
+    "player_days_with_total_goal_exposures_more_than_one": 564,
+    "maximum_total_goal_exposures": 6,
+    "unique_players_with_overlapping_goal_exposure": 21
+  }
+}
