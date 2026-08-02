@@ -368,7 +368,7 @@ def fetch_candidate_firm_text_history(
                 else:
                     filters=",".join([
                         f"authorships.institutions.id:{'|'.join(batch)}",
-                        f"primary_topic.subfield.id:{project.primary_subfield_id}",
+                        f"primary_topic.subfield.id:{_canonical_subfield_filter_id(project.primary_subfield_id)}",
                         f"from_publication_date:{start}",
                         f"to_publication_date:{end}",
                     ])
