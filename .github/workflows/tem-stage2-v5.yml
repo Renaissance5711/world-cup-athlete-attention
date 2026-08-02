@@ -14,12 +14,13 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   PYTHONUNBUFFERED: '1'
-  V3_PAYLOAD_FILE_ID: '1S_NZtREGyBk0f4_igBEPu93m5KlUtQqP'
-  V3_PAYLOAD_SHA256: '77652f613b548d012b65efcd0be43d5b123d97f4df7c9ff4063e8da7341b75fd'
-  V3_PAYLOAD_BYTES: '512011'
+  V3_ARTIFACT_ID: '8828825689'
+  V3_ARTIFACT_SHA256: 'aebc17b63eac2f0ea201b4479963c4401efc5fb62342f7ec43a6f6e13900547b'
+  V3_ARTIFACT_BYTES: '2495057'
 
 jobs:
   full-stage2:
@@ -38,6 +39,7 @@ jobs:
         shell: bash
         env:
           OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test -n "${OPENALEX_API_KEY:-}"
@@ -51,38 +53,18 @@ jobs:
             --required run_stage2_v5_relationship_transition.py \
             --required requirements.txt
 
-          panel_payload=runtime/panel_payload.tar.gz
-          panel_ok=false
-          for source in \
-            "usercontent|https://drive.usercontent.google.com/download?id=${V3_PAYLOAD_FILE_ID}&export=download&confirm=t" \
-            "drive-uc|https://drive.google.com/uc?export=download&id=${V3_PAYLOAD_FILE_ID}&confirm=t"
-          do
-            source_name="${source%%|*}"
-            source_url="${source#*|}"
-            for attempt in 1 2 3 4 5; do
-              rm -f "$panel_payload"
-              if curl --location --fail --show-error --silent \
-                --connect-timeout 30 --max-time 180 \
-                --retry 3 --retry-all-errors --retry-delay 5 \
-                --output "$panel_payload" "$source_url"; then
-                actual_bytes="$(stat -c%s "$panel_payload" 2>/dev/null || echo 0)"
-                actual_sha="$(sha256sum "$panel_payload" | awk '{print $1}')"
-                if [ "$actual_bytes" = "${V3_PAYLOAD_BYTES}" ] \
-                  && [ "$actual_sha" = "${V3_PAYLOAD_SHA256}" ] \
-                  && gzip -t "$panel_payload"; then
-                  panel_ok=true
-                  echo "Verified V3 payload source=$source_name attempt=$attempt bytes=$actual_bytes"
-                  break 2
-                fi
-                echo "V3 payload validation failed source=$source_name attempt=$attempt bytes=$actual_bytes sha256=$actual_sha"
-              else
-                echo "V3 payload download failed source=$source_name attempt=$attempt"
-              fi
-              sleep $((attempt * 5))
-            done
-          done
-          test "$panel_ok" = true
-          tar -xzf "$panel_payload" -C runtime/unpack/panel
+          artifact_zip=runtime/v3_input_artifact.zip
+          curl --location --fail --show-error --silent \
+            --connect-timeout 30 --max-time 300 \
+            --retry 5 --retry-all-errors --retry-delay 5 \
+            --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --output "$artifact_zip" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${V3_ARTIFACT_ID}/zip"
+          test "$(stat -c%s "$artifact_zip")" = "${V3_ARTIFACT_BYTES}"
+          echo "${V3_ARTIFACT_SHA256}  $artifact_zip" | sha256sum --check --strict
+          unzip -q "$artifact_zip" 'v3_input/*' -d runtime/unpack/panel
 
           code_entry="$(find runtime/unpack/code -type f -name run_stage2_v5_relationship_transition.py -print -quit)"
           test -n "$code_entry"
@@ -99,7 +81,7 @@ jobs:
           mkdir -p runtime/outputs/v3_input
           cp -a "$panel_root"/. runtime/outputs/v3_input/
 
-          rm -rf runtime/unpack runtime/panel_payload.tar.gz
+          rm -rf runtime/unpack runtime/v3_input_artifact.zip
 
           test -s runtime/code/run_stage2_v5_relationship_transition.py
           test -s runtime/code/requirements.txt
