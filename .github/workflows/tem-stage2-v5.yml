@@ -14,6 +14,9 @@ permissions:
 
 env:
   PYTHONUNBUFFERED: '1'
+  V3_PAYLOAD_URL: 'https://drive.usercontent.google.com/download?id=1S_NZtREGyBk0f4_igBEPu93m5KlUtQqP&export=download&confirm=t'
+  V3_PAYLOAD_SHA256: '77652f613b548d012b65efcd0be43d5b123d97f4df7c9ff4063e8da7341b75fd'
+  V3_PAYLOAD_BYTES: '512011'
 
 jobs:
   full-stage2:
@@ -28,7 +31,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Reconstruct repository payload and load GitHub secret
+      - name: Reconstruct code, download verified V3 input, and load GitHub secret
         shell: bash
         env:
           OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
@@ -44,12 +47,14 @@ jobs:
             --destination runtime/unpack/code \
             --required run_stage2_v5_relationship_transition.py \
             --required requirements.txt
-          python .github/scripts/reconstruct_stage2_payload.py \
-            --parts 'tem_stage2_v5_payload/panel/part_*.b64' \
-            --destination runtime/unpack/panel \
-            --required risk_set_full_firm_projects_input_v3.csv \
-            --required author_project_panel_v3_strict.csv \
-            --required v3_stage2_input_audit.json
+
+          curl --location --fail --show-error --silent \
+            --retry 10 --retry-all-errors --retry-delay 5 \
+            --output runtime/panel_payload.tar.gz "${V3_PAYLOAD_URL}"
+          test "$(stat -c%s runtime/panel_payload.tar.gz)" = "${V3_PAYLOAD_BYTES}"
+          echo "${V3_PAYLOAD_SHA256}  runtime/panel_payload.tar.gz" | sha256sum --check --strict
+          gzip -t runtime/panel_payload.tar.gz
+          tar -xzf runtime/panel_payload.tar.gz -C runtime/unpack/panel
 
           code_entry="$(find runtime/unpack/code -type f -name run_stage2_v5_relationship_transition.py -print -quit)"
           test -n "$code_entry"
@@ -63,12 +68,13 @@ jobs:
           mkdir -p runtime/outputs/v3_input
           cp -a "$panel_root"/. runtime/outputs/v3_input/
 
-          rm -rf runtime/unpack
+          rm -rf runtime/unpack runtime/panel_payload.tar.gz
 
           test -s runtime/code/run_stage2_v5_relationship_transition.py
           test -s runtime/code/requirements.txt
           test -s runtime/outputs/v3_input/risk_set_full_firm_projects_input_v3.csv
           test -s runtime/outputs/v3_input/author_project_panel_v3_strict.csv
+          test -s runtime/outputs/v3_input/author_project_panel_v3_scored.csv
           test -s runtime/outputs/v3_input/v3_stage2_input_audit.json
           find runtime/code -maxdepth 3 -type f | sort
 
@@ -104,8 +110,11 @@ jobs:
           assert audit['count_assertions']==expected, audit
           projects=pd.read_csv(root/'risk_set_full_firm_projects_input_v3.csv')
           strict=pd.read_csv(root/'author_project_panel_v3_strict.csv')
+          scored=pd.read_csv(root/'author_project_panel_v3_scored.csv')
+          matched=scored[scored['score_matched'].astype(bool)]
           assert len(projects)==1881 and projects['work_id'].nunique()==1881
           assert len(strict)==6602 and strict['author_id'].nunique()==273
+          assert len(scored)==9413 and len(matched)==7839 and matched['doi'].nunique()==7709
           print(json.dumps(expected,indent=2))
           PY
 
