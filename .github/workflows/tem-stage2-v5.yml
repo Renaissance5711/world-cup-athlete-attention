@@ -13,9 +13,6 @@ permissions:
 
 env:
   PYTHONUNBUFFERED: '1'
-  PAYLOAD_URL: 'https://drive.usercontent.google.com/download?id=1S_NZtREGyBk0f4_igBEPu93m5KlUtQqP&export=download&confirm=t'
-  PAYLOAD_SHA256: 'da6058a5e41e9d63f2b367f84c92effe5ca371878aa959bc88a2b83b5639f87c'
-  PAYLOAD_BYTES: '562854'
 
 jobs:
   full-stage2:
@@ -30,33 +27,49 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Download resume payload and load ephemeral credential
+      - name: Reconstruct repository payload and load GitHub secret
         shell: bash
+        env:
+          OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
         run: |
           set -euo pipefail
-          mkdir -p runtime/outputs
-          curl --location --fail --show-error --silent \
-            --retry 10 --retry-all-errors --retry-delay 5 \
-            --output runtime/payload.tar.gz "${PAYLOAD_URL}"
-          test "$(stat -c%s runtime/payload.tar.gz)" = "${PAYLOAD_BYTES}"
-          echo "${PAYLOAD_SHA256}  runtime/payload.tar.gz" | sha256sum --check --strict
-          gzip -t runtime/payload.tar.gz
-          sha256sum runtime/payload.tar.gz | tee runtime/outputs/runtime_payload.sha256
-          tar -xzf runtime/payload.tar.gz -C runtime
-          root=runtime/tem_stage2_v5_resume_payload
-          key_file="$root/credential/openalex_api_key.txt"
-          test -s "$key_file"
-          OPENALEX_KEY="$(tr -d '\r\n' < "$key_file")"
-          test -n "$OPENALEX_KEY"
-          echo "::add-mask::$OPENALEX_KEY"
-          printf 'OPENALEX_API_KEY=%s\n' "$OPENALEX_KEY" >> "$GITHUB_ENV"
-          unset OPENALEX_KEY
-          shred -u "$key_file" || rm -f "$key_file"
-          mv "$root/code" runtime/code
-          mv "$root/v3_input" runtime/outputs/v3_input
-          rm -rf "$root"
-          shred -u runtime/payload.tar.gz || rm -f runtime/payload.tar.gz
-          test ! -e runtime/payload.tar.gz
+          test -n "${OPENALEX_API_KEY:-}"
+          echo "::add-mask::$OPENALEX_API_KEY"
+          printf 'OPENALEX_API_KEY=%s\n' "$OPENALEX_API_KEY" >> "$GITHUB_ENV"
+
+          mkdir -p runtime/outputs runtime/unpack/code runtime/unpack/panel
+
+          cat tem_stage2_v5_payload/code/part_*.b64 \
+            | tr -d '\r\n' \
+            | base64 --decode \
+            > runtime/code_payload.tar.gz
+          gzip -t runtime/code_payload.tar.gz
+          tar -xzf runtime/code_payload.tar.gz -C runtime/unpack/code
+          code_entry="$(find runtime/unpack/code -type f -name run_stage2_v5_relationship_transition.py -print -quit)"
+          test -n "$code_entry"
+          code_root="$(dirname "$code_entry")"
+          mkdir -p runtime/code
+          cp -a "$code_root"/. runtime/code/
+
+          cat tem_stage2_v5_payload/panel/part_*.b64 \
+            | tr -d '\r\n' \
+            | base64 --decode \
+            > runtime/panel_payload.tar.gz
+          gzip -t runtime/panel_payload.tar.gz
+          tar -xzf runtime/panel_payload.tar.gz -C runtime/unpack/panel
+          panel_entry="$(find runtime/unpack/panel -type f -name risk_set_full_firm_projects_input_v3.csv -print -quit)"
+          test -n "$panel_entry"
+          panel_root="$(dirname "$panel_entry")"
+          mkdir -p runtime/outputs/v3_input
+          cp -a "$panel_root"/. runtime/outputs/v3_input/
+
+          rm -rf runtime/unpack runtime/code_payload.tar.gz runtime/panel_payload.tar.gz
+
+          test -s runtime/code/run_stage2_v5_relationship_transition.py
+          test -s runtime/code/requirements.txt
+          test -s runtime/outputs/v3_input/risk_set_full_firm_projects_input_v3.csv
+          test -s runtime/outputs/v3_input/author_project_panel_v3_strict.csv
+          test -s runtime/outputs/v3_input/v3_stage2_input_audit.json
           find runtime/code -maxdepth 3 -type f | sort
 
       - name: Install dependencies
@@ -104,6 +117,7 @@ jobs:
           key: tem-stage2-v5-openalex-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             tem-stage2-v5-openalex-
+          save-always: true
 
       - name: Run full relationship-transition extraction and models
         id: stage2
@@ -134,9 +148,10 @@ jobs:
         run: |
           set -u
           mkdir -p runtime/outputs/stage2_v5
-          (
-            cd runtime/code
-            PYTHONPATH=. python - <<'PY'
+          if [ -d runtime/code ]; then
+            (
+              cd runtime/code
+              PYTHONPATH=. python - <<'PY'
           import json
           from pathlib import Path
           from src.openalex_stage2 import OpenAlexClient
@@ -148,7 +163,8 @@ jobs:
               payload={'status':'unavailable','error':type(exc).__name__}
           output.write_text(json.dumps(payload,indent=2),encoding='utf-8')
           PY
-          )
+            ) || true
+          fi
           {
             echo "run_id=${GITHUB_RUN_ID}"
             echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
@@ -162,7 +178,7 @@ jobs:
           fi
           du -sh runtime/openalex_cache runtime/outputs 2>/dev/null || true
           find runtime/outputs -maxdepth 3 -type f -printf '%p\t%s bytes\n' | sort || true
-          test ! -e runtime/tem_stage2_v5_resume_payload/credential/openalex_api_key.txt
+          test -z "$(find runtime -type f -name openalex_api_key.txt -print -quit 2>/dev/null)"
 
       - name: Upload results and diagnostic checkpoint
         if: always()
@@ -173,3 +189,20 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 6
+
+      - name: Enforce Stage 2 exit status
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          exit_file=runtime/outputs/stage2_v5_exit_code.txt
+          test -s "$exit_file"
+          code="$(tr -d '\r\n' < "$exit_file")"
+          case "$code" in
+            ''|*[!0-9]*)
+              echo "Invalid Stage 2 exit code"
+              exit 1
+              ;;
+          esac
+          echo "stage2_exit_code=$code"
+          test "$code" -eq 0
