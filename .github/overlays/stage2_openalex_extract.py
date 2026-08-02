@@ -254,6 +254,20 @@ def fetch_institution_metadata(
     return pd.DataFrame(rows).drop_duplicates("institution_id")
 
 
+def _canonical_subfield_filter_id(value: Any) -> str:
+    """Return the integer OpenAlex subfield ID used by API filters."""
+    if value is None or pd.isna(value):
+        raise ValueError("Missing primary_subfield_id")
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    text = str(value).strip()
+    if text.endswith(".0") and text[:-2].isdigit():
+        return text[:-2]
+    if not text:
+        raise ValueError("Missing primary_subfield_id")
+    return text
+
+
 def fetch_exact_field_counts(
     client: OpenAlexClient,
     units: pd.DataFrame,
@@ -262,16 +276,25 @@ def fetch_exact_field_counts(
     top_n: int = 100,
 ) -> pd.DataFrame:
     """Fetch exact-date grouped field activity and retain the top company groups."""
+    columns = [
+        "subfield_id",
+        "as_of_date",
+        "company_id",
+        "prior_subfield_publication_count",
+        "query_from_date",
+        "query_to_date",
+    ]
     rows: list[dict[str, Any]] = []
     for unit in units.itertuples(index=False):
         start, end = exact_five_year_window(str(unit.publication_date))
-        cache_path = cache_dir / "field_groups" / f"{unit.unit_key}.json"
+        subfield_filter_id = _canonical_subfield_filter_id(unit.primary_subfield_id)
+        cache_path = cache_dir / "field_groups_v2" / f"{unit.unit_key}.json"
         if cache_path.exists():
             groups = json.loads(cache_path.read_text(encoding="utf-8"))
         else:
             filters = ",".join(
                 [
-                    f"primary_topic.subfield.id:{unit.primary_subfield_id}",
+                    f"primary_topic.subfield.id:{subfield_filter_id}",
                     f"from_publication_date:{start}",
                     f"to_publication_date:{end}",
                     "authorships.institutions.type:company",
@@ -303,7 +326,9 @@ def fetch_exact_field_counts(
                     "query_to_date": end,
                 }
             )
-    return pd.DataFrame(rows)
+    if not rows:
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame(rows, columns=columns)
 
 
 def fetch_candidate_firm_text_history(
