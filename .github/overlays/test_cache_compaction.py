@@ -8,6 +8,7 @@ from src.stage2_openalex_extract import (
     _write_json_atomic,
     fetch_candidate_firm_text_history,
     fetch_entity_year_history,
+    fetch_exact_field_counts,
 )
 
 
@@ -24,6 +25,29 @@ class StaticClient:
     def iter_results(self, *args, **kwargs):
         self.calls += 1
         yield from self.works
+
+
+class FieldGroupClient:
+    def __init__(self, groups=None):
+        self.groups = list(groups or [])
+        self.group_calls = []
+        self.metadata_calls = []
+
+    def iter_groups(self, path, params):
+        self.group_calls.append((path, dict(params)))
+        yield from self.groups
+
+    def get_json(self, path, params):
+        self.metadata_calls.append((path, dict(params)))
+        return {
+            "results": [
+                {
+                    "id": "https://openalex.org/I9",
+                    "display_name": "Example Company",
+                    "type": "company",
+                }
+            ]
+        }
 
 
 def company_work(work_id="W1", company_id="I9", title="A useful title"):
@@ -44,6 +68,18 @@ def company_work(work_id="W1", company_id="I9", title="A useful title"):
             }
         ],
     }
+
+
+def field_units():
+    return pd.DataFrame(
+        [
+            {
+                "primary_subfield_id": 1102.0,
+                "publication_date": "2012-09-26",
+                "unit_key": "subfield_1102_2012-09-26",
+            }
+        ]
+    )
 
 
 def test_atomic_gzip_json_round_trip(tmp_path):
@@ -134,3 +170,43 @@ def test_cognitive_history_migrates_raw_works_to_compact_rows(tmp_path):
     assert result.loc[0, "focal_work_id"] == "P1"
     assert result.loc[0, "company_id"] == "I9"
     assert "useful research" in result.loc[0, "document_text"]
+
+
+def test_field_counts_normalize_float_id_and_keep_empty_schema(tmp_path):
+    client = FieldGroupClient()
+
+    result = fetch_exact_field_counts(client, field_units(), tmp_path)
+
+    assert result.empty
+    assert list(result.columns) == [
+        "subfield_id",
+        "as_of_date",
+        "company_id",
+        "prior_subfield_publication_count",
+        "query_from_date",
+        "query_to_date",
+    ]
+    assert len(client.group_calls) == 1
+    query_filter = client.group_calls[0][1]["filter"]
+    assert "primary_topic.subfield.id:1102," in query_filter
+    assert "primary_topic.subfield.id:1102.0" not in query_filter
+    assert (tmp_path / "field_groups_v2" / "subfield_1102_2012-09-26.json").exists()
+
+
+def test_field_counts_preserve_join_value_and_select_company(tmp_path):
+    client = FieldGroupClient(
+        [{"key": "https://openalex.org/I9", "count": 7}]
+    )
+
+    result = fetch_exact_field_counts(client, field_units(), tmp_path)
+
+    assert result.to_dict("records") == [
+        {
+            "subfield_id": 1102.0,
+            "as_of_date": "2012-09-26",
+            "company_id": "I9",
+            "prior_subfield_publication_count": 7,
+            "query_from_date": "2007-09-26",
+            "query_to_date": "2012-09-25",
+        }
+    ]
