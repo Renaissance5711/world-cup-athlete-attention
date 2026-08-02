@@ -17,7 +17,7 @@ permissions:
 
 env:
   PYTHONUNBUFFERED: '1'
-  V3_PAYLOAD_URL: 'https://drive.usercontent.google.com/download?id=1S_NZtREGyBk0f4_igBEPu93m5KlUtQqP&export=download&confirm=t'
+  V3_PAYLOAD_FILE_ID: '1S_NZtREGyBk0f4_igBEPu93m5KlUtQqP'
   V3_PAYLOAD_SHA256: '77652f613b548d012b65efcd0be43d5b123d97f4df7c9ff4063e8da7341b75fd'
   V3_PAYLOAD_BYTES: '512011'
 
@@ -51,13 +51,38 @@ jobs:
             --required run_stage2_v5_relationship_transition.py \
             --required requirements.txt
 
-          curl --location --fail --show-error --silent \
-            --retry 10 --retry-all-errors --retry-delay 5 \
-            --output runtime/panel_payload.tar.gz "${V3_PAYLOAD_URL}"
-          test "$(stat -c%s runtime/panel_payload.tar.gz)" = "${V3_PAYLOAD_BYTES}"
-          echo "${V3_PAYLOAD_SHA256}  runtime/panel_payload.tar.gz" | sha256sum --check --strict
-          gzip -t runtime/panel_payload.tar.gz
-          tar -xzf runtime/panel_payload.tar.gz -C runtime/unpack/panel
+          panel_payload=runtime/panel_payload.tar.gz
+          panel_ok=false
+          for source in \
+            "usercontent|https://drive.usercontent.google.com/download?id=${V3_PAYLOAD_FILE_ID}&export=download&confirm=t" \
+            "drive-uc|https://drive.google.com/uc?export=download&id=${V3_PAYLOAD_FILE_ID}&confirm=t"
+          do
+            source_name="${source%%|*}"
+            source_url="${source#*|}"
+            for attempt in 1 2 3 4 5; do
+              rm -f "$panel_payload"
+              if curl --location --fail --show-error --silent \
+                --connect-timeout 30 --max-time 180 \
+                --retry 3 --retry-all-errors --retry-delay 5 \
+                --output "$panel_payload" "$source_url"; then
+                actual_bytes="$(stat -c%s "$panel_payload" 2>/dev/null || echo 0)"
+                actual_sha="$(sha256sum "$panel_payload" | awk '{print $1}')"
+                if [ "$actual_bytes" = "${V3_PAYLOAD_BYTES}" ] \
+                  && [ "$actual_sha" = "${V3_PAYLOAD_SHA256}" ] \
+                  && gzip -t "$panel_payload"; then
+                  panel_ok=true
+                  echo "Verified V3 payload source=$source_name attempt=$attempt bytes=$actual_bytes"
+                  break 2
+                fi
+                echo "V3 payload validation failed source=$source_name attempt=$attempt bytes=$actual_bytes sha256=$actual_sha"
+              else
+                echo "V3 payload download failed source=$source_name attempt=$attempt"
+              fi
+              sleep $((attempt * 5))
+            done
+          done
+          test "$panel_ok" = true
+          tar -xzf "$panel_payload" -C runtime/unpack/panel
 
           code_entry="$(find runtime/unpack/code -type f -name run_stage2_v5_relationship_transition.py -print -quit)"
           test -n "$code_entry"
@@ -134,6 +159,7 @@ jobs:
           path: runtime/openalex_cache
           key: tem-stage2-v5-openalex-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
+            tem-stage2-v5-openalex-30734912133-1
             tem-stage2-v5-openalex-
 
       - name: Run full relationship-transition extraction and models
@@ -161,7 +187,7 @@ jobs:
 
       - name: Save restartable OpenAlex cache checkpoint
         id: save-openalex
-        if: always()
+        if: always() && steps.cache-openalex.outcome == 'success' && steps.stage2.outcome != 'skipped'
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
