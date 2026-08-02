@@ -7,6 +7,8 @@ on:
       - '.github/workflows/tem-stage2-v5.yml'
       - '.github/scripts/reconstruct_stage2_payload.py'
       - '.github/overlays/stage2_models.py'
+      - '.github/overlays/stage2_openalex_extract.py'
+      - '.github/overlays/test_cache_compaction.py'
       - 'tem_stage2_v5_payload/**'
   workflow_dispatch:
 
@@ -42,7 +44,7 @@ jobs:
           echo "::add-mask::$OPENALEX_API_KEY"
           printf 'OPENALEX_API_KEY=%s\n' "$OPENALEX_API_KEY" >> "$GITHUB_ENV"
 
-          mkdir -p runtime/outputs runtime/unpack/code runtime/unpack/panel
+          mkdir -p runtime/outputs runtime/openalex_cache runtime/unpack/code runtime/unpack/panel
           python .github/scripts/reconstruct_stage2_payload.py \
             --parts 'tem_stage2_v5_payload/code/part_*.b64' \
             --destination runtime/unpack/code \
@@ -63,6 +65,8 @@ jobs:
           mkdir -p runtime/code
           cp -a "$code_root"/. runtime/code/
           cp .github/overlays/stage2_models.py runtime/code/src/stage2_models.py
+          cp .github/overlays/stage2_openalex_extract.py runtime/code/src/stage2_openalex_extract.py
+          cp .github/overlays/test_cache_compaction.py runtime/code/tests_v5/test_cache_compaction.py
 
           panel_entry="$(find runtime/unpack/panel -type f -name risk_set_full_firm_projects_input_v3.csv -print -quit)"
           test -n "$panel_entry"
@@ -75,6 +79,8 @@ jobs:
           test -s runtime/code/run_stage2_v5_relationship_transition.py
           test -s runtime/code/requirements.txt
           test -s runtime/code/src/stage2_models.py
+          test -s runtime/code/src/stage2_openalex_extract.py
+          test -s runtime/code/tests_v5/test_cache_compaction.py
           test -s runtime/outputs/v3_input/risk_set_full_firm_projects_input_v3.csv
           test -s runtime/outputs/v3_input/author_project_panel_v3_strict.csv
           test -s runtime/outputs/v3_input/author_project_panel_v3_scored.csv
@@ -123,13 +129,12 @@ jobs:
 
       - name: Restore restartable OpenAlex cache
         id: cache-openalex
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: runtime/openalex_cache
           key: tem-stage2-v5-openalex-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             tem-stage2-v5-openalex-
-          save-always: true
 
       - name: Run full relationship-transition extraction and models
         id: stage2
@@ -154,6 +159,15 @@ jobs:
           echo "$code" | tee ../outputs/stage2_v5_exit_code.txt
           exit "$code"
 
+      - name: Save restartable OpenAlex cache checkpoint
+        id: save-openalex
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: runtime/openalex_cache
+          key: tem-stage2-v5-openalex-${{ github.run_id }}-${{ github.run_attempt }}
+
       - name: Record run diagnostics
         if: always()
         shell: bash
@@ -167,10 +181,9 @@ jobs:
           import json
           from pathlib import Path
           from src.openalex_stage2 import OpenAlexClient
-          from run_stage2_v5_relationship_transition import sanitize_rate_limit_status
           output=Path('../outputs/stage2_v5/openalex_rate_limit_end.json')
           try:
-              payload=sanitize_rate_limit_status(OpenAlexClient().rate_limit_status())
+              payload=OpenAlexClient().rate_limit_status()
           except Exception as exc:
               payload={'status':'unavailable','error':type(exc).__name__}
           output.write_text(json.dumps(payload,indent=2),encoding='utf-8')
@@ -182,6 +195,7 @@ jobs:
             echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
             echo "commit=${GITHUB_SHA}"
             echo "cache_hit=${{ steps.cache-openalex.outputs.cache-hit }}"
+            echo "cache_save_outcome=${{ steps.save-openalex.outcome }}"
             echo "stage2_outcome=${{ steps.stage2.outcome }}"
             echo "utc_finished=$(date -u +%FT%TZ)"
           } | tee runtime/outputs/github_run_metadata.txt
@@ -189,6 +203,9 @@ jobs:
             cat runtime/outputs/stage2_v5/run_status.json
           fi
           du -sh runtime/openalex_cache runtime/outputs 2>/dev/null || true
+          find runtime/openalex_cache -type f -printf '%s\t%p\n' 2>/dev/null \
+            | sort -nr | head -n 20 \
+            > runtime/outputs/stage2_v5/largest_cache_files.tsv || true
           find runtime/outputs -maxdepth 3 -type f -printf '%p\t%s bytes\n' | sort || true
           test -z "$(find runtime -type f -name openalex_api_key.txt -print -quit 2>/dev/null)"
 
