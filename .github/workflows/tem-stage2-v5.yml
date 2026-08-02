@@ -141,7 +141,7 @@ jobs:
           path: runtime/openalex_cache
           key: tem-stage2-v5-openalex-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            tem-stage2-v5-openalex-30734912133-1
+            tem-stage2-v5-openalex-30736054981-1
             tem-stage2-v5-openalex-
 
       - name: Run full relationship-transition extraction and models
