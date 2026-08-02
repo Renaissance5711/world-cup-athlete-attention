@@ -39,10 +39,10 @@ jobs:
 
           mkdir -p runtime/outputs runtime/unpack/code runtime/unpack/panel
 
-          cat tem_stage2_v5_payload/code/part_*.b64 \
-            | tr -d '\r\n' \
-            | base64 --decode \
-            > runtime/code_payload.tar.gz
+          : > runtime/code_payload.tar.gz
+          for part in tem_stage2_v5_payload/code/part_*.b64; do
+            base64 --decode "$part" >> runtime/code_payload.tar.gz
+          done
           gzip -t runtime/code_payload.tar.gz
           tar -xzf runtime/code_payload.tar.gz -C runtime/unpack/code
           code_entry="$(find runtime/unpack/code -type f -name run_stage2_v5_relationship_transition.py -print -quit)"
@@ -51,10 +51,10 @@ jobs:
           mkdir -p runtime/code
           cp -a "$code_root"/. runtime/code/
 
-          cat tem_stage2_v5_payload/panel/part_*.b64 \
-            | tr -d '\r\n' \
-            | base64 --decode \
-            > runtime/panel_payload.tar.gz
+          : > runtime/panel_payload.tar.gz
+          for part in tem_stage2_v5_payload/panel/part_*.b64; do
+            base64 --decode "$part" >> runtime/panel_payload.tar.gz
+          done
           gzip -t runtime/panel_payload.tar.gz
           tar -xzf runtime/panel_payload.tar.gz -C runtime/unpack/panel
           panel_entry="$(find runtime/unpack/panel -type f -name risk_set_full_firm_projects_input_v3.csv -print -quit)"
