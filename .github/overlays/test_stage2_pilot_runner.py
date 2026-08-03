@@ -29,7 +29,7 @@ def test_field_rank_is_deterministic_with_company_tiebreak():
 
 
 def test_singleton_project_details_use_free_per_work_requests(tmp_path):
-    from run_stage2_realization_pilot import _fetch_project_details_singletons
+    from run_stage2_realization_pilot_v2 import fetch_project_details_singletons
 
     class FakeClient:
         def __init__(self):
@@ -63,11 +63,11 @@ def test_singleton_project_details_use_free_per_work_requests(tmp_path):
 
     projects = pd.DataFrame({"work_id": ["W1"], "focal_author_ids": ["A1"]})
     client = FakeClient()
-    details = _fetch_project_details_singletons(client, projects, tmp_path)
+    details = fetch_project_details_singletons(client, projects, tmp_path)
     assert client.calls[0][0] == "/works/W1"
     assert details.loc[0, "actual_company_ids"] == "I1"
     assert details.loc[0, "focal_education_ids"] == "U1"
 
-    second = _fetch_project_details_singletons(client, projects, tmp_path)
+    second = fetch_project_details_singletons(client, projects, tmp_path)
     assert len(client.calls) == 1
     pd.testing.assert_frame_equal(details, second)
