@@ -26,3 +26,48 @@ def test_field_rank_is_deterministic_with_company_tiebreak():
     out = add_deterministic_field_rank(frame)
     assert out.sort_values("field_rank")["company_id"].tolist() == ["C1", "C2", "C3"]
     assert out.sort_values("field_rank")["field_rank"].tolist() == [1, 2, 3]
+
+
+def test_singleton_project_details_use_free_per_work_requests(tmp_path):
+    from run_stage2_realization_pilot import _fetch_project_details_singletons
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = []
+
+        def get_json(self, path, params):
+            self.calls.append((path, params))
+            return {
+                "id": "https://openalex.org/W1",
+                "title": "Pilot title",
+                "abstract_inverted_index": {"pilot": [0]},
+                "publication_date": "2020-01-01",
+                "authorships": [
+                    {
+                        "author": {"id": "https://openalex.org/A1"},
+                        "institutions": [
+                            {
+                                "id": "https://openalex.org/I1",
+                                "display_name": "Firm",
+                                "type": "company",
+                            },
+                            {
+                                "id": "https://openalex.org/U1",
+                                "display_name": "University",
+                                "type": "education",
+                            },
+                        ],
+                    }
+                ],
+            }
+
+    projects = pd.DataFrame({"work_id": ["W1"], "focal_author_ids": ["A1"]})
+    client = FakeClient()
+    details = _fetch_project_details_singletons(client, projects, tmp_path)
+    assert client.calls[0][0] == "/works/W1"
+    assert details.loc[0, "actual_company_ids"] == "I1"
+    assert details.loc[0, "focal_education_ids"] == "U1"
+
+    second = _fetch_project_details_singletons(client, projects, tmp_path)
+    assert len(client.calls) == 1
+    pd.testing.assert_frame_equal(details, second)
