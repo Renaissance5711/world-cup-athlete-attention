@@ -8,7 +8,9 @@ on:
       - '.github/scripts/reconstruct_stage2_payload.py'
       - '.github/overlays/stage2_models.py'
       - '.github/overlays/stage2_openalex_extract.py'
+      - '.github/overlays/stage2_institution_cache_patch.py'
       - '.github/overlays/test_cache_compaction.py'
+      - '.github/overlays/test_institution_cache_optimization.py'
       - 'tem_stage2_v5_payload/**'
   workflow_dispatch:
 
@@ -37,7 +39,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -u
-          for run_id in 30754232018 30754307420 30754344623; do
+          for run_id in 30754232018 30754307420 30754344623 30780601294; do
             curl --request POST --fail-with-body --silent --show-error \
               --header "Authorization: Bearer ${GITHUB_TOKEN}" \
               --header "Accept: application/vnd.github+json" \
@@ -92,7 +94,10 @@ jobs:
           cp -a "$code_root"/. runtime/code/
           cp .github/overlays/stage2_models.py runtime/code/src/stage2_models.py
           cp .github/overlays/stage2_openalex_extract.py runtime/code/src/stage2_openalex_extract.py
+          printf '\n' >> runtime/code/src/stage2_openalex_extract.py
+          cat .github/overlays/stage2_institution_cache_patch.py >> runtime/code/src/stage2_openalex_extract.py
           cp .github/overlays/test_cache_compaction.py runtime/code/tests_v5/test_cache_compaction.py
+          cp .github/overlays/test_institution_cache_optimization.py runtime/code/tests_v5/test_institution_cache_optimization.py
 
           panel_entry="$(find runtime/unpack/panel -type f -name risk_set_full_firm_projects_input_v3.csv -print -quit)"
           test -n "$panel_entry"
@@ -107,6 +112,7 @@ jobs:
           test -s runtime/code/src/stage2_models.py
           test -s runtime/code/src/stage2_openalex_extract.py
           test -s runtime/code/tests_v5/test_cache_compaction.py
+          test -s runtime/code/tests_v5/test_institution_cache_optimization.py
           test -s runtime/outputs/v3_input/risk_set_full_firm_projects_input_v3.csv
           test -s runtime/outputs/v3_input/author_project_panel_v3_strict.csv
           test -s runtime/outputs/v3_input/author_project_panel_v3_scored.csv
@@ -160,7 +166,7 @@ jobs:
           path: runtime/openalex_cache
           key: tem-stage2-v5-openalex-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            tem-stage2-v5-openalex-30754344623-1
+            tem-stage2-v5-openalex-30780601294-1
             tem-stage2-v5-openalex-
 
       - name: Run full relationship-transition extraction and models
@@ -217,6 +223,32 @@ jobs:
           PY
             ) || true
           fi
+          python - <<'PY'
+          import json
+          import sqlite3
+          from pathlib import Path
+          database=Path('runtime/openalex_cache/institution_metadata/by_id.sqlite3')
+          output=Path('runtime/outputs/stage2_v5/institution_metadata_cache_stats.json')
+          payload={'status':'absent'}
+          if database.exists():
+              with sqlite3.connect(database) as connection:
+                  total=connection.execute('SELECT COUNT(*) FROM institutions').fetchone()[0]
+                  companies=connection.execute(
+                      "SELECT COUNT(*) FROM institutions WHERE institution_type='company' AND is_missing=0"
+                  ).fetchone()[0]
+                  missing=connection.execute(
+                      'SELECT COUNT(*) FROM institutions WHERE is_missing=1'
+                  ).fetchone()[0]
+              payload={
+                  'status':'ready',
+                  'database_bytes':database.stat().st_size,
+                  'institutions':total,
+                  'companies':companies,
+                  'negative_cache':missing,
+                  'legacy_batch_files':len(list(database.parent.glob('batch_*.json'))),
+              }
+          output.write_text(json.dumps(payload,indent=2),encoding='utf-8')
+          PY
           {
             echo "run_id=${GITHUB_RUN_ID}"
             echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
