@@ -1,0 +1,227 @@
+name: TEM Stage 2 Realization Pilot
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/tem-stage2-realization-pilot.yml'
+      - '.github/overlays/stage2_pilot_*.py'
+      - '.github/overlays/run_stage2_realization_pilot.py'
+      - '.github/overlays/test_stage2_pilot_*.py'
+      - '.github/overlays/stage2_openalex_extract.py'
+      - '.github/overlays/stage2_institution_cache_patch.py'
+      - '.github/overlays/test_cache_compaction.py'
+      - '.github/overlays/test_institution_cache_optimization.py'
+
+concurrency:
+  group: tem-stage2-realization-pilot-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  V3_ARTIFACT_ID: '8828825689'
+  V3_ARTIFACT_SHA256: 'aebc17b63eac2f0ea201b4479963c4401efc5fb62342f7ec43a6f6e13900547b'
+  V3_ARTIFACT_BYTES: '2495057'
+
+jobs:
+  realization-pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Check out pilot branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reconstruct code and verified V3 input
+        shell: bash
+        env:
+          OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -n "${OPENALEX_API_KEY:-}"
+          echo "::add-mask::$OPENALEX_API_KEY"
+          printf 'OPENALEX_API_KEY=%s\n' "$OPENALEX_API_KEY" >> "$GITHUB_ENV"
+
+          mkdir -p runtime/outputs runtime/openalex_cache runtime/unpack/code runtime/unpack/panel
+          python .github/scripts/reconstruct_stage2_payload.py \
+            --parts 'tem_stage2_v5_payload/code/part_*.b64' \
+            --destination runtime/unpack/code \
+            --required run_stage2_v5_relationship_transition.py \
+            --required requirements.txt
+
+          artifact_zip=runtime/v3_input_artifact.zip
+          curl --location --fail --show-error --silent \
+            --connect-timeout 30 --max-time 300 \
+            --retry 5 --retry-all-errors --retry-delay 5 \
+            --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --output "$artifact_zip" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${V3_ARTIFACT_ID}/zip"
+          test "$(stat -c%s "$artifact_zip")" = "${V3_ARTIFACT_BYTES}"
+          echo "${V3_ARTIFACT_SHA256}  $artifact_zip" | sha256sum --check --strict
+          unzip -q "$artifact_zip" 'v3_input/*' -d runtime/unpack/panel
+
+          code_entry="$(find runtime/unpack/code -type f -name run_stage2_v5_relationship_transition.py -print -quit)"
+          test -n "$code_entry"
+          code_root="$(dirname "$code_entry")"
+          mkdir -p runtime/code
+          cp -a "$code_root"/. runtime/code/
+
+          cp .github/overlays/stage2_models.py runtime/code/src/stage2_models.py
+          cp .github/overlays/stage2_openalex_extract.py runtime/code/src/stage2_openalex_extract.py
+          printf '\n' >> runtime/code/src/stage2_openalex_extract.py
+          cat .github/overlays/stage2_institution_cache_patch.py \
+            >> runtime/code/src/stage2_openalex_extract.py
+          cp .github/overlays/test_cache_compaction.py \
+            runtime/code/tests_v5/test_cache_compaction.py
+          cp .github/overlays/test_institution_cache_optimization.py \
+            runtime/code/tests_v5/test_institution_cache_optimization.py
+
+          cp .github/overlays/stage2_pilot_sampling.py runtime/code/stage2_pilot_sampling.py
+          cp .github/overlays/stage2_pilot_risk_set.py runtime/code/stage2_pilot_risk_set.py
+          cp .github/overlays/stage2_pilot_metrics.py runtime/code/stage2_pilot_metrics.py
+          cp .github/overlays/stage2_pilot_models.py runtime/code/stage2_pilot_models.py
+          cp .github/overlays/run_stage2_realization_pilot.py \
+            runtime/code/run_stage2_realization_pilot.py
+          cp .github/overlays/test_stage2_pilot_*.py runtime/code/tests_v5/
+
+          panel_entry="$(find runtime/unpack/panel -type f -name risk_set_full_firm_projects_input_v3.csv -print -quit)"
+          test -n "$panel_entry"
+          panel_root="$(dirname "$panel_entry")"
+          mkdir -p runtime/outputs/v3_input
+          cp -a "$panel_root"/. runtime/outputs/v3_input/
+          rm -rf runtime/unpack runtime/v3_input_artifact.zip
+
+          test -s runtime/code/run_stage2_realization_pilot.py
+          test -s runtime/outputs/v3_input/risk_set_full_firm_projects_input_v3.csv
+          test -s runtime/outputs/v3_input/author_project_panel_v3_strict.csv
+
+      - name: Install dependencies
+        working-directory: runtime/code
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Run legacy and pilot tests
+        working-directory: runtime/code
+        env:
+          PYTHONPATH: '.'
+        run: pytest -q tests_v5
+
+      - name: Validate full V3 input before sampling
+        working-directory: runtime/code
+        env:
+          PYTHONPATH: '.'
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          from src.stage2_validation import audit_full_project_input
+          projects = pd.read_csv('../outputs/v3_input/risk_set_full_firm_projects_input_v3.csv')
+          audit = audit_full_project_input(projects)
+          assert audit['projects'] == 1881, audit
+          assert audit['focal_authors'] == 273, audit
+          print(audit)
+          PY
+
+      - name: Restore restartable OpenAlex cache
+        id: cache-openalex
+        uses: actions/cache/restore@v4
+        with:
+          path: runtime/openalex_cache
+          key: tem-stage2-realization-pilot-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            tem-stage2-v5-openalex-30785082979-2
+            tem-stage2-v5-openalex-30785082979-1
+            tem-stage2-v5-openalex-
+
+      - name: Run 400-project realization pilot
+        id: pilot
+        continue-on-error: true
+        working-directory: runtime/code
+        env:
+          PYTHONPATH: '.'
+        shell: bash
+        run: |
+          set +e
+          mkdir -p ../outputs/stage2_realization_pilot ../openalex_cache
+          python run_stage2_realization_pilot.py \
+            --projects ../outputs/v3_input/risk_set_full_firm_projects_input_v3.csv \
+            --strict-panel ../outputs/v3_input/author_project_panel_v3_strict.csv \
+            --cache-dir ../openalex_cache \
+            --output-dir ../outputs/stage2_realization_pilot \
+            --sample-size 400 \
+            --sample-seed 20260804 \
+            --field-fetch-top-n 100 \
+            --main-field-top-n 50 \
+            --sensitivity-field-top-n 100 \
+            --university-min-works 5 \
+            --cognitive-batch-size 20 \
+            2>&1 | tee ../outputs/stage2_realization_pilot.log
+          code=${PIPESTATUS[0]}
+          echo "$code" | tee ../outputs/stage2_realization_pilot_exit_code.txt
+          exit "$code"
+
+      - name: Save restartable OpenAlex cache checkpoint
+        id: save-openalex
+        if: always() && steps.cache-openalex.outcome == 'success' && steps.pilot.outcome != 'skipped'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: runtime/openalex_cache
+          key: tem-stage2-realization-pilot-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Record pilot diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          mkdir -p runtime/outputs/stage2_realization_pilot
+          {
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "commit=${GITHUB_SHA}"
+            echo "cache_hit=${{ steps.cache-openalex.outputs.cache-hit }}"
+            echo "cache_save_outcome=${{ steps.save-openalex.outcome }}"
+            echo "pilot_outcome=${{ steps.pilot.outcome }}"
+            echo "utc_finished=$(date -u +%FT%TZ)"
+          } | tee runtime/outputs/stage2_realization_pilot/github_run_metadata.txt
+          find runtime/outputs -maxdepth 3 -type f -printf '%p\t%s bytes\n' | sort || true
+          test -z "$(find runtime -type f -name openalex_api_key.txt -print -quit 2>/dev/null)"
+
+      - name: Upload pilot results and checkpoints
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tem-stage2-realization-pilot-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/outputs
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6
+
+      - name: Enforce software completion
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          exit_file=runtime/outputs/stage2_realization_pilot_exit_code.txt
+          test -s "$exit_file"
+          code="$(tr -d '\r\n' < "$exit_file")"
+          case "$code" in
+            ''|*[!0-9]*)
+              echo "Invalid pilot exit code"
+              exit 1
+              ;;
+          esac
+          echo "stage2_realization_pilot_exit_code=$code"
+          test "$code" -eq 0
