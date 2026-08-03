@@ -37,7 +37,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -u
-          for run_id in 30754232018 30754307420; do
+          for run_id in 30754232018 30754307420 30754344623; do
             curl --request POST --fail-with-body --silent --show-error \
               --header "Authorization: Bearer ${GITHUB_TOKEN}" \
               --header "Accept: application/vnd.github+json" \
@@ -160,7 +160,7 @@ jobs:
           path: runtime/openalex_cache
           key: tem-stage2-v5-openalex-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            tem-stage2-v5-openalex-30751400574-1
+            tem-stage2-v5-openalex-30754344623-1
             tem-stage2-v5-openalex-
 
       - name: Run full relationship-transition extraction and models
