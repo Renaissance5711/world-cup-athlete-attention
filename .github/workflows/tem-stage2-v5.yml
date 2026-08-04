@@ -166,8 +166,40 @@ jobs:
           path: runtime/openalex_cache
           key: tem-stage2-v5-openalex-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            tem-stage2-v5-openalex-30780601294-1
+            tem-stage2-v5-openalex-30785082979-2
+            tem-stage2-v5-openalex-30785082979-1
             tem-stage2-v5-openalex-
+
+      - name: Verify restored cache and record field-group progress
+        shell: bash
+        env:
+          MATCHED_CACHE_KEY: ${{ steps.cache-openalex.outputs.cache-matched-key }}
+        run: |
+          set -euo pipefail
+          expected_key='tem-stage2-v5-openalex-30785082979-2'
+          echo "cache_matched_key=${MATCHED_CACHE_KEY:-<none>}"
+          if [ "${MATCHED_CACHE_KEY:-}" != "$expected_key" ]; then
+            echo "Expected cache restore from $expected_key; refusing to consume OpenAlex quota."
+            exit 1
+          fi
+          mkdir -p runtime/outputs/stage2_v5
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          cache_dir=Path('runtime/openalex_cache/field_groups_v2')
+          completed=sum(1 for path in cache_dir.rglob('*.json') if path.is_file()) if cache_dir.exists() else 0
+          total=1798
+          payload={
+              'completed':completed,
+              'total':total,
+              'completion_ratio':completed/total,
+              'completion_percent':100.0*completed/total,
+              'cache_directory':str(cache_dir),
+          }
+          output=Path('runtime/outputs/stage2_v5/field_group_cache_progress.json')
+          output.write_text(json.dumps(payload,indent=2),encoding='utf-8')
+          print(json.dumps(payload,indent=2))
+          PY
 
       - name: Run full relationship-transition extraction and models
         id: stage2
@@ -254,6 +286,7 @@ jobs:
             echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
             echo "commit=${GITHUB_SHA}"
             echo "cache_hit=${{ steps.cache-openalex.outputs.cache-hit }}"
+            echo "cache_matched_key=${{ steps.cache-openalex.outputs.cache-matched-key }}"
             echo "cache_save_outcome=${{ steps.save-openalex.outcome }}"
             echo "stage2_outcome=${{ steps.stage2.outcome }}"
             echo "utc_finished=$(date -u +%FT%TZ)"
