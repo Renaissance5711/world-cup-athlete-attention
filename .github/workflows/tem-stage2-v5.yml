@@ -1,0 +1,25 @@
+name: TEM Stage 2 V5 Full Expansion
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/tem-stage2-v5.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: tem-stage2-v5-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  full-stage2:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Full expansion paused
+        run: |
+          echo 'Full Stage 2 expansion is temporarily paused while the 400-project realization pilot consumes the OpenAlex budget.'
+          echo 'Restore the implementation from commit 17e35c2a2293d51a44cf646ac275d0368fe29c26 after the pilot is complete.'
