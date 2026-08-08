@@ -171,11 +171,7 @@ jobs:
           path: runtime/openalex_cache
           key: tem-stage2-realization-pilot-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            tem-stage2-realization-pilot-30972918742-1
-            tem-stage2-realization-pilot-30864579088-3
             tem-stage2-realization-pilot-
-            tem-stage2-v5-openalex-30785082979-2
-            tem-stage2-v5-openalex-30785082979-1
             tem-stage2-v5-openalex-
 
       - name: Run 400-project realization pilot
