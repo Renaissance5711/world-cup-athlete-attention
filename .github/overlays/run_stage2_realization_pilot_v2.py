@@ -12,6 +12,44 @@ from src.openalex_stage2 import OpenAlexClient
 from src.stage2_risk_set import normalize_openalex_id, parse_project_detail
 
 
+_base_compute_project_firm_cognitive_fit = base.compute_project_firm_cognitive_fit
+
+
+def _normalize_cognitive_datetime_columns(
+    project_texts: pd.DataFrame,
+    text_history: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Normalize cognitive-fit comparison dates to UTC-aware timestamps."""
+    normalized_projects = project_texts.copy()
+    normalized_history = text_history.copy()
+    normalized_projects["publication_date"] = pd.to_datetime(
+        normalized_projects["publication_date"], utc=True, errors="raise"
+    )
+    if "publication_date" in normalized_history.columns:
+        normalized_history["publication_date"] = pd.to_datetime(
+            normalized_history["publication_date"], utc=True, errors="raise"
+        )
+    return normalized_projects, normalized_history
+
+
+def _compute_project_firm_cognitive_fit_utc(
+    candidates: pd.DataFrame,
+    project_texts: pd.DataFrame,
+    text_history: pd.DataFrame,
+) -> pd.DataFrame:
+    normalized_projects, normalized_history = _normalize_cognitive_datetime_columns(
+        project_texts, text_history
+    )
+    return _base_compute_project_firm_cognitive_fit(
+        candidates,
+        normalized_projects,
+        normalized_history,
+    )
+
+
+base.compute_project_firm_cognitive_fit = _compute_project_firm_cognitive_fit_utc
+
+
 def fetch_project_details_singletons(
     client: OpenAlexClient,
     projects: pd.DataFrame,
