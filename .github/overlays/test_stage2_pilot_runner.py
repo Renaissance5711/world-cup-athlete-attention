@@ -88,6 +88,8 @@ def test_cognitive_datetime_normalizer_makes_dates_utc():
         "title": ["prior work"],
         "abstract_inverted_index": [{"prior": [0], "work": [1]}],
     })
+    project_dtype = project_texts["publication_date"].dtype
+    history_dtype = text_history["publication_date"].dtype
 
     normalized_projects, normalized_history = runner._normalize_cognitive_datetime_columns(
         project_texts, text_history
@@ -95,5 +97,8 @@ def test_cognitive_datetime_normalizer_makes_dates_utc():
 
     assert str(normalized_projects["publication_date"].dtype).endswith(", UTC]")
     assert str(normalized_history["publication_date"].dtype).endswith(", UTC]")
-    assert project_texts["publication_date"].dtype == object
+    assert project_texts["publication_date"].tolist() == ["2000-05-18"]
+    assert text_history["publication_date"].tolist() == [pd.Timestamp("1999-05-18")]
+    assert project_texts["publication_date"].dtype == project_dtype
+    assert text_history["publication_date"].dtype == history_dtype
     assert text_history["publication_date"].dt.tz is None
