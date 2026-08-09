@@ -71,3 +71,28 @@ def test_singleton_project_details_use_free_per_work_requests(tmp_path):
     second = fetch_project_details_singletons(client, projects, tmp_path)
     assert len(client.calls) == 1
     pd.testing.assert_frame_equal(details, second)
+
+
+def test_cognitive_datetime_normalizer_makes_dates_utc():
+    import run_stage2_realization_pilot as runner
+
+    normalizer = getattr(runner, "_normalize_cognitive_datetime_columns", None)
+    assert callable(normalizer), "runner must normalize cognitive-fit dates before comparison"
+
+    project_texts = pd.DataFrame({
+        "work_id": ["W1"],
+        "publication_date": ["2000-05-18"],
+        "project_text": ["project text"],
+    })
+    text_history = pd.DataFrame({
+        "focal_work_id": ["W1"],
+        "company_id": ["I1"],
+        "publication_date": pd.to_datetime(["1999-05-18"]),
+        "title": ["prior work"],
+        "abstract_inverted_index": [{"prior": [0], "work": [1]}],
+    })
+
+    normalized_projects, normalized_history = normalizer(project_texts, text_history)
+
+    assert str(normalized_projects["publication_date"].dtype).endswith(", UTC]")
+    assert str(normalized_history["publication_date"].dtype).endswith(", UTC]")
