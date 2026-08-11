@@ -37,11 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p runtime/code
-          python .github/scripts/reconstruct_stage2_payload.py \
-            --parts 'tem_stage2_v5_payload/code/part_*.b64' \
-            --destination runtime/code \
-            --required run_stage2_v5_relationship_transition.py \
-            --required requirements.txt
+          python .github/scripts/reconstruct_stage2_payload.py --parts 'tem_stage2_v5_payload/code/part_*.b64' --destination runtime/code --required run_stage2_v5_relationship_transition.py --required requirements.txt
           cp .github/overlays/stage2_pilot_sampling.py runtime/code/stage2_pilot_sampling.py
           cp .github/overlays/stage2_pilot_risk_set.py runtime/code/stage2_pilot_risk_set.py
           cp .github/overlays/stage2_pilot_metrics.py runtime/code/stage2_pilot_metrics.py
@@ -51,10 +47,7 @@ jobs:
           cp .github/overlays/stage2_compot_stagea.py runtime/code/stage2_compot_stagea.py
           cp .github/overlays/stage2_compot_models.py runtime/code/stage2_compot_models.py
           cp .github/overlays/stage2_compot_conflict.py runtime/code/stage2_compot_conflict.py
-          for path in \
-            .github/overlays/stage2_full_sharding.py \
-            .github/overlays/run_stage2_realization_shard.py \
-            .github/overlays/run_stage2_full_merge.py; do
+          for path in .github/overlays/stage2_full_sharding.py .github/overlays/run_stage2_realization_shard.py .github/overlays/run_stage2_full_merge.py; do
             if [ -f "$path" ]; then cp "$path" runtime/code/; fi
           done
           cp .github/overlays/test_stage2_full_sharding.py runtime/code/tests_v5/test_stage2_full_sharding.py
@@ -72,8 +65,4 @@ jobs:
         working-directory: runtime/code
         env:
           PYTHONPATH: '.'
-        run: pytest -q \
-          tests_v5/test_stage2_full_sharding.py \
-          tests_v5/test_stage2_realization_shard.py \
-          tests_v5/test_stage2_full_merge.py \
-          tests_v5/test_stage2_pilot_models.py
+        run: pytest -q tests_v5/test_stage2_full_sharding.py tests_v5/test_stage2_realization_shard.py tests_v5/test_stage2_full_merge.py tests_v5/test_stage2_pilot_models.py
