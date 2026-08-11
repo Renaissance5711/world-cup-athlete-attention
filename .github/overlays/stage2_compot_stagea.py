@@ -28,10 +28,11 @@ def _compot_quartile(values: pd.Series) -> pd.Series:
     numeric = pd.to_numeric(values, errors="raise").astype(float)
     if numeric.isna().any():
         raise ValueError("COMPOT contains missing values")
-    if len(numeric) < 4:
-        raise ValueError("At least four projects are required for COMPOT quartiles")
+    if numeric.empty:
+        raise ValueError("At least one project is required for COMPOT grouping")
+    bins = min(4, len(numeric))
     ranked = numeric.rank(method="first")
-    return pd.qcut(ranked, 4, labels=[1, 2, 3, 4]).astype(int)
+    return pd.qcut(ranked, bins, labels=list(range(1, bins + 1))).astype(int)
 
 
 def build_stagea_project_panel(
