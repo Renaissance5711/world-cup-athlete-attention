@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/tem-stage2-v5.yml'
+      - '.github/overlays/stage2_full_*.py'
+      - '.github/overlays/run_stage2_realization_shard.py'
+      - '.github/overlays/run_stage2_full_merge.py'
+      - '.github/overlays/test_stage2_full_*.py'
+      - '.github/overlays/test_stage2_realization_shard.py'
   workflow_dispatch:
 
 concurrency:
@@ -15,11 +20,60 @@ permissions:
   contents: read
 
 jobs:
-  full-stage2:
-    if: github.event_name == 'workflow_dispatch'
+  software-gate:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - name: Full expansion paused
+      - name: Check out branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reconstruct validated Stage 2 code
+        shell: bash
         run: |
-          echo 'Full Stage 2 expansion is temporarily paused while the 400-project realization pilot consumes the OpenAlex budget.'
-          echo 'Restore the implementation from commit 17e35c2a2293d51a44cf646ac275d0368fe29c26 after the pilot is complete.'
+          set -euo pipefail
+          mkdir -p runtime/code
+          python .github/scripts/reconstruct_stage2_payload.py \
+            --parts 'tem_stage2_v5_payload/code/part_*.b64' \
+            --destination runtime/code \
+            --required run_stage2_v5_relationship_transition.py \
+            --required requirements.txt
+          cp .github/overlays/stage2_pilot_sampling.py runtime/code/stage2_pilot_sampling.py
+          cp .github/overlays/stage2_pilot_risk_set.py runtime/code/stage2_pilot_risk_set.py
+          cp .github/overlays/stage2_pilot_metrics.py runtime/code/stage2_pilot_metrics.py
+          cp .github/overlays/stage2_pilot_models.py runtime/code/stage2_pilot_models.py
+          cp .github/overlays/run_stage2_realization_pilot.py runtime/code/run_stage2_realization_pilot.py
+          cp .github/overlays/run_stage2_realization_pilot_v2.py runtime/code/run_stage2_realization_pilot_v2.py
+          cp .github/overlays/stage2_compot_stagea.py runtime/code/stage2_compot_stagea.py
+          cp .github/overlays/stage2_compot_models.py runtime/code/stage2_compot_models.py
+          cp .github/overlays/stage2_compot_conflict.py runtime/code/stage2_compot_conflict.py
+          for path in \
+            .github/overlays/stage2_full_sharding.py \
+            .github/overlays/run_stage2_realization_shard.py \
+            .github/overlays/run_stage2_full_merge.py; do
+            if [ -f "$path" ]; then cp "$path" runtime/code/; fi
+          done
+          cp .github/overlays/test_stage2_full_sharding.py runtime/code/tests_v5/test_stage2_full_sharding.py
+          cp .github/overlays/test_stage2_realization_shard.py runtime/code/tests_v5/test_stage2_realization_shard.py
+          cp .github/overlays/test_stage2_full_merge.py runtime/code/tests_v5/test_stage2_full_merge.py
+          cp .github/overlays/test_stage2_pilot_models.py runtime/code/tests_v5/test_stage2_pilot_models.py
+
+      - name: Install dependencies
+        working-directory: runtime/code
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Run full-expansion software tests
+        working-directory: runtime/code
+        env:
+          PYTHONPATH: '.'
+        run: pytest -q \
+          tests_v5/test_stage2_full_sharding.py \
+          tests_v5/test_stage2_realization_shard.py \
+          tests_v5/test_stage2_full_merge.py \
+          tests_v5/test_stage2_pilot_models.py
