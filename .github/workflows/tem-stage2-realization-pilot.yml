@@ -2,20 +2,9 @@ name: TEM Stage 2 Realization Pilot
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/tem-stage2-realization-pilot.yml'
-      - '.github/overlays/stage2_pilot_*.py'
-      - '.github/overlays/run_stage2_realization_pilot.py'
-      - '.github/overlays/test_stage2_pilot_*.py'
-      - '.github/overlays/stage2_openalex_extract.py'
-      - '.github/overlays/stage2_institution_cache_patch.py'
-      - '.github/overlays/test_cache_compaction.py'
-      - '.github/overlays/test_institution_cache_optimization.py'
 
 concurrency:
-  group: tem-stage2-realization-pilot-${{ github.event.pull_request.number || github.ref }}
+  group: tem-stage2-realization-pilot-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -55,10 +44,10 @@ jobs:
           echo "::add-mask::$OPENALEX_API_KEY"
           printf 'OPENALEX_API_KEY=%s\n' "$OPENALEX_API_KEY" >> "$GITHUB_ENV"
 
-          mkdir -p runtime/outputs runtime/openalex_cache runtime/unpack/code runtime/unpack/panel
+          mkdir -p runtime/code runtime/outputs/v3_input runtime/outputs/stage2_realization_pilot runtime/openalex_cache
           python .github/scripts/reconstruct_stage2_payload.py \
             --parts 'tem_stage2_v5_payload/code/part_*.b64' \
-            --destination runtime/unpack/code \
+            --destination runtime/code \
             --required run_stage2_v5_relationship_transition.py \
             --required requirements.txt
 
@@ -73,7 +62,9 @@ jobs:
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${V3_ARTIFACT_ID}/zip"
           test "$(stat -c%s "$artifact_zip")" = "${V3_ARTIFACT_BYTES}"
           echo "${V3_ARTIFACT_SHA256}  $artifact_zip" | sha256sum --check --strict
-          unzip -q "$artifact_zip" 'v3_input/*' -d runtime/unpack/panel
+          unzip -q "$artifact_zip" 'v3_input/*' -d runtime/v3_input_unpack
+          cp -a runtime/v3_input_unpack/v3_input/. runtime/outputs/v3_input/
+          rm -rf runtime/v3_input_unpack "$artifact_zip"
 
           seed_zip=runtime/v5_seed_artifact.zip
           curl --location --fail --show-error --silent \
@@ -86,56 +77,28 @@ jobs:
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${V5_SEED_ARTIFACT_ID}/zip"
           test "$(stat -c%s "$seed_zip")" = "${V5_SEED_ARTIFACT_BYTES}"
           echo "${V5_SEED_ARTIFACT_SHA256}  $seed_zip" | sha256sum --check --strict
-          mkdir -p runtime/unpack/seed
-          unzip -q "$seed_zip" \
-            'stage2_v5/author_company_history.csv' \
-            'stage2_v5/university_company_history.csv' \
-            -d runtime/unpack/seed
-
-          code_entry="$(find runtime/unpack/code -type f -name run_stage2_v5_relationship_transition.py -print -quit)"
-          test -n "$code_entry"
-          code_root="$(dirname "$code_entry")"
-          mkdir -p runtime/code
-          cp -a "$code_root"/. runtime/code/
-
-          cp .github/overlays/stage2_models.py runtime/code/src/stage2_models.py
-          cp .github/overlays/stage2_openalex_extract.py runtime/code/src/stage2_openalex_extract.py
-          printf '\n' >> runtime/code/src/stage2_openalex_extract.py
-          cat .github/overlays/stage2_institution_cache_patch.py \
-            >> runtime/code/src/stage2_openalex_extract.py
-          cp .github/overlays/test_cache_compaction.py \
-            runtime/code/tests_v5/test_cache_compaction.py
-          cp .github/overlays/test_institution_cache_optimization.py \
-            runtime/code/tests_v5/test_institution_cache_optimization.py
+          unzip -q "$seed_zip" -d runtime/v5_seed_unpack
+          seed_root="$(find runtime/v5_seed_unpack -type d -name stage2_v5 -print -quit)"
+          test -n "$seed_root"
+          cp "$seed_root"/project_details.pkl runtime/outputs/stage2_realization_pilot/project_details.pkl || true
+          rm -rf runtime/v5_seed_unpack "$seed_zip"
 
           cp .github/overlays/stage2_pilot_sampling.py runtime/code/stage2_pilot_sampling.py
           cp .github/overlays/stage2_pilot_risk_set.py runtime/code/stage2_pilot_risk_set.py
           cp .github/overlays/stage2_pilot_metrics.py runtime/code/stage2_pilot_metrics.py
           cp .github/overlays/stage2_pilot_models.py runtime/code/stage2_pilot_models.py
-          cp .github/overlays/run_stage2_realization_pilot.py \
-            runtime/code/run_stage2_realization_pilot.py
-          cp .github/overlays/run_stage2_realization_pilot_v2.py \
-            runtime/code/run_stage2_realization_pilot_v2.py
-          cp .github/overlays/test_stage2_pilot_*.py runtime/code/tests_v5/
-
-          panel_entry="$(find runtime/unpack/panel -type f -name risk_set_full_firm_projects_input_v3.csv -print -quit)"
-          test -n "$panel_entry"
-          panel_root="$(dirname "$panel_entry")"
-          mkdir -p runtime/outputs/v3_input
-          cp -a "$panel_root"/. runtime/outputs/v3_input/
-
-          mkdir -p runtime/outputs/stage2_realization_pilot
-          cp runtime/unpack/seed/stage2_v5/author_company_history.csv \
-            runtime/outputs/stage2_realization_pilot/author_company_history.csv
-          cp runtime/unpack/seed/stage2_v5/university_company_history.csv \
-            runtime/outputs/stage2_realization_pilot/university_company_history.csv
-
-          rm -rf runtime/unpack runtime/v3_input_artifact.zip runtime/v5_seed_artifact.zip
-
-          test -s runtime/code/run_stage2_realization_pilot.py
-          test -s runtime/code/run_stage2_realization_pilot_v2.py
-          test -s runtime/outputs/v3_input/risk_set_full_firm_projects_input_v3.csv
-          test -s runtime/outputs/v3_input/author_project_panel_v3_strict.csv
+          cp .github/overlays/run_stage2_realization_pilot.py runtime/code/run_stage2_realization_pilot.py
+          cp .github/overlays/run_stage2_realization_pilot_v2.py runtime/code/run_stage2_realization_pilot_v2.py
+          cp .github/overlays/stage2_openalex_extract.py runtime/code/src/stage2_openalex_extract.py
+          printf '\n' >> runtime/code/src/stage2_openalex_extract.py
+          cat .github/overlays/stage2_institution_cache_patch.py >> runtime/code/src/stage2_openalex_extract.py
+          cp .github/overlays/test_cache_compaction.py runtime/code/tests_v5/test_cache_compaction.py
+          cp .github/overlays/test_institution_cache_optimization.py runtime/code/tests_v5/test_institution_cache_optimization.py
+          cp .github/overlays/test_stage2_pilot_sampling.py runtime/code/tests_v5/test_stage2_pilot_sampling.py
+          cp .github/overlays/test_stage2_pilot_risk_set.py runtime/code/tests_v5/test_stage2_pilot_risk_set.py
+          cp .github/overlays/test_stage2_pilot_metrics.py runtime/code/tests_v5/test_stage2_pilot_metrics.py
+          cp .github/overlays/test_stage2_pilot_models.py runtime/code/tests_v5/test_stage2_pilot_models.py
+          cp .github/overlays/test_stage2_pilot_runner.py runtime/code/tests_v5/test_stage2_pilot_runner.py
 
       - name: Install dependencies
         working-directory: runtime/code
@@ -157,10 +120,12 @@ jobs:
           python - <<'PY'
           import pandas as pd
           from src.stage2_validation import audit_full_project_input
-          projects = pd.read_csv('../outputs/v3_input/risk_set_full_firm_projects_input_v3.csv')
-          audit = audit_full_project_input(projects)
-          assert audit['projects'] == 1881, audit
-          assert audit['focal_authors'] == 273, audit
+          projects=pd.read_csv('../outputs/v3_input/risk_set_full_firm_projects_input_v3.csv')
+          audit=audit_full_project_input(projects)
+          assert audit['projects']==1881, audit
+          assert audit['focal_authors']==273, audit
+          assert audit['project_author_rows']==1908, audit
+          assert audit['year_min']==2000 and audit['year_max']==2024, audit
           print(audit)
           PY
 
@@ -172,7 +137,6 @@ jobs:
           key: tem-stage2-realization-pilot-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             tem-stage2-realization-pilot-
-            tem-stage2-v5-openalex-
 
       - name: Run 400-project realization pilot
         id: pilot
@@ -183,7 +147,6 @@ jobs:
         shell: bash
         run: |
           set +e
-          mkdir -p ../outputs/stage2_realization_pilot ../openalex_cache
           python run_stage2_realization_pilot_v2.py \
             --projects ../outputs/v3_input/risk_set_full_firm_projects_input_v3.csv \
             --strict-panel ../outputs/v3_input/author_project_panel_v3_strict.csv \
@@ -221,10 +184,12 @@ jobs:
             echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
             echo "commit=${GITHUB_SHA}"
             echo "cache_hit=${{ steps.cache-openalex.outputs.cache-hit }}"
+            echo "cache_matched_key=${{ steps.cache-openalex.outputs.cache-matched-key }}"
             echo "cache_save_outcome=${{ steps.save-openalex.outcome }}"
             echo "pilot_outcome=${{ steps.pilot.outcome }}"
             echo "utc_finished=$(date -u +%FT%TZ)"
           } | tee runtime/outputs/stage2_realization_pilot/github_run_metadata.txt
+          du -sh runtime/openalex_cache runtime/outputs 2>/dev/null || true
           find runtime/outputs -maxdepth 3 -type f -printf '%p\t%s bytes\n' | sort || true
           test -z "$(find runtime -type f -name openalex_api_key.txt -print -quit 2>/dev/null)"
 
@@ -252,5 +217,5 @@ jobs:
               exit 1
               ;;
           esac
-          echo "stage2_realization_pilot_exit_code=$code"
+          echo "pilot_exit_code=$code"
           test "$code" -eq 0
