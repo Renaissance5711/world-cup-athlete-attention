@@ -18,13 +18,21 @@ concurrency:
 
 permissions:
   contents: read
+  actions: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  V3_ARTIFACT_ID: '8828825689'
+  V3_ARTIFACT_SHA256: 'aebc17b63eac2f0ea201b4479963c4401efc5fb62342f7ec43a6f6e13900547b'
+  V3_ARTIFACT_BYTES: '2495057'
+  FULL_SHARD_COUNT: '5'
 
 jobs:
-  software-gate:
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
-      - name: Check out branch
+      - name: Check out full-expansion branch
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -36,8 +44,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p runtime/code
-          python .github/scripts/reconstruct_stage2_payload.py --parts 'tem_stage2_v5_payload/code/part_*.b64' --destination runtime/code --required run_stage2_v5_relationship_transition.py --required requirements.txt
+          mkdir -p runtime/code runtime/input/v3_input
+          python .github/scripts/reconstruct_stage2_payload.py \
+            --parts 'tem_stage2_v5_payload/code/part_*.b64' \
+            --destination runtime/code \
+            --required run_stage2_v5_relationship_transition.py \
+            --required requirements.txt
+
           cp .github/overlays/stage2_pilot_sampling.py runtime/code/stage2_pilot_sampling.py
           cp .github/overlays/stage2_pilot_risk_set.py runtime/code/stage2_pilot_risk_set.py
           cp .github/overlays/stage2_pilot_metrics.py runtime/code/stage2_pilot_metrics.py
@@ -47,13 +60,28 @@ jobs:
           cp .github/overlays/stage2_compot_stagea.py runtime/code/stage2_compot_stagea.py
           cp .github/overlays/stage2_compot_models.py runtime/code/stage2_compot_models.py
           cp .github/overlays/stage2_compot_conflict.py runtime/code/stage2_compot_conflict.py
-          for path in .github/overlays/stage2_full_sharding.py .github/overlays/run_stage2_realization_shard.py .github/overlays/run_stage2_full_merge.py; do
-            if [ -f "$path" ]; then cp "$path" runtime/code/; fi
-          done
+          cp .github/overlays/stage2_full_sharding.py runtime/code/stage2_full_sharding.py
+          cp .github/overlays/run_stage2_realization_shard.py runtime/code/run_stage2_realization_shard.py
+          cp .github/overlays/run_stage2_full_merge.py runtime/code/run_stage2_full_merge.py
+
+          cp .github/overlays/stage2_openalex_extract.py runtime/code/src/stage2_openalex_extract.py
+          printf '\n' >> runtime/code/src/stage2_openalex_extract.py
+          cat .github/overlays/stage2_institution_cache_patch.py >> runtime/code/src/stage2_openalex_extract.py
+
+          cp .github/overlays/test_cache_compaction.py runtime/code/tests_v5/test_cache_compaction.py
+          cp .github/overlays/test_institution_cache_optimization.py runtime/code/tests_v5/test_institution_cache_optimization.py
+          cp .github/overlays/test_stage2_pilot_sampling.py runtime/code/tests_v5/test_stage2_pilot_sampling.py
+          cp .github/overlays/test_stage2_pilot_risk_set.py runtime/code/tests_v5/test_stage2_pilot_risk_set.py
+          cp .github/overlays/test_stage2_pilot_metrics.py runtime/code/tests_v5/test_stage2_pilot_metrics.py
+          cp .github/overlays/test_stage2_pilot_models.py runtime/code/tests_v5/test_stage2_pilot_models.py
+          cp .github/overlays/test_stage2_pilot_runner.py runtime/code/tests_v5/test_stage2_pilot_runner.py
+          cp .github/overlays/test_stage2_compot_stagea.py runtime/code/tests_v5/test_stage2_compot_stagea.py
+          cp .github/overlays/test_stage2_compot_models.py runtime/code/tests_v5/test_stage2_compot_models.py
+          cp .github/overlays/test_stage2_compot_conflict.py runtime/code/tests_v5/test_stage2_compot_conflict.py
+          cp .github/overlays/test_stage2_compot_validation_runner.py runtime/code/tests_v5/test_stage2_compot_validation_runner.py
           cp .github/overlays/test_stage2_full_sharding.py runtime/code/tests_v5/test_stage2_full_sharding.py
           cp .github/overlays/test_stage2_realization_shard.py runtime/code/tests_v5/test_stage2_realization_shard.py
           cp .github/overlays/test_stage2_full_merge.py runtime/code/tests_v5/test_stage2_full_merge.py
-          cp .github/overlays/test_stage2_pilot_models.py runtime/code/tests_v5/test_stage2_pilot_models.py
 
       - name: Install dependencies
         working-directory: runtime/code
@@ -61,8 +89,363 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest
 
-      - name: Run full-expansion software tests
+      - name: Run full regression suite before extraction
         working-directory: runtime/code
         env:
           PYTHONPATH: '.'
-        run: pytest -q tests_v5/test_stage2_full_sharding.py tests_v5/test_stage2_realization_shard.py tests_v5/test_stage2_full_merge.py tests_v5/test_stage2_pilot_models.py
+        run: pytest -q tests_v5
+
+      - name: Download and verify V3 input
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_zip=runtime/v3_input_artifact.zip
+          curl --location --fail --show-error --silent \
+            --connect-timeout 30 --max-time 300 \
+            --retry 5 --retry-all-errors --retry-delay 5 \
+            --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --output "$artifact_zip" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${V3_ARTIFACT_ID}/zip"
+          test "$(stat -c%s "$artifact_zip")" = "${V3_ARTIFACT_BYTES}"
+          echo "${V3_ARTIFACT_SHA256}  $artifact_zip" | sha256sum --check --strict
+          unzip -q "$artifact_zip" 'v3_input/*' -d runtime/input
+          rm -f "$artifact_zip"
+          test -s runtime/input/v3_input/risk_set_full_firm_projects_input_v3.csv
+          test -s runtime/input/v3_input/author_project_panel_v3_strict.csv
+
+      - name: Build deterministic five-shard assignment
+        working-directory: runtime/code
+        env:
+          PYTHONPATH: '.'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+          from stage2_full_sharding import assign_full_shards
+
+          root = Path('../input')
+          projects = pd.read_csv(root/'v3_input/risk_set_full_firm_projects_input_v3.csv')
+          assignment, audit = assign_full_shards(
+              projects,
+              shard_count=5,
+              seed=20260811,
+              expected_projects=1881,
+          )
+          assignment.to_csv(root/'full_shard_assignment.csv', index=False)
+          (root/'full_shard_audit.json').write_text(
+              json.dumps(audit, indent=2), encoding='utf-8'
+          )
+          assert audit['projects'] == 1881, audit
+          assert audit['shards'] == 5, audit
+          assert audit['max_shard_size_difference'] <= 1, audit
+          assert audit['max_within_stratum_difference'] <= 1, audit
+          sizes = sorted(audit['shard_sizes'].values())
+          assert sizes == [376, 376, 376, 376, 377], audit
+          assert set(audit['temporal_counts']) == {'0','1','2','3','4'}, audit
+          print(json.dumps(audit, indent=2))
+          PY
+
+      - name: Upload verified full-sample input bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: tem-stage2-full-input-${{ github.run_id }}
+          path: |
+            runtime/input/v3_input
+            runtime/input/full_shard_assignment.csv
+            runtime/input/full_shard_audit.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6
+
+  extract:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard: [0, 1, 2, 3, 4]
+    steps:
+      - name: Check out full-expansion branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reconstruct validated extraction code
+        shell: bash
+        env:
+          OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${OPENALEX_API_KEY:-}"
+          echo "::add-mask::$OPENALEX_API_KEY"
+          printf 'OPENALEX_API_KEY=%s\n' "$OPENALEX_API_KEY" >> "$GITHUB_ENV"
+
+          mkdir -p runtime/code runtime/input runtime/openalex_cache runtime/shard_outputs
+          python .github/scripts/reconstruct_stage2_payload.py \
+            --parts 'tem_stage2_v5_payload/code/part_*.b64' \
+            --destination runtime/code \
+            --required run_stage2_v5_relationship_transition.py \
+            --required requirements.txt
+
+          cp .github/overlays/stage2_pilot_sampling.py runtime/code/stage2_pilot_sampling.py
+          cp .github/overlays/stage2_pilot_risk_set.py runtime/code/stage2_pilot_risk_set.py
+          cp .github/overlays/stage2_pilot_metrics.py runtime/code/stage2_pilot_metrics.py
+          cp .github/overlays/stage2_pilot_models.py runtime/code/stage2_pilot_models.py
+          cp .github/overlays/run_stage2_realization_pilot.py runtime/code/run_stage2_realization_pilot.py
+          cp .github/overlays/run_stage2_realization_pilot_v2.py runtime/code/run_stage2_realization_pilot_v2.py
+          cp .github/overlays/run_stage2_realization_shard.py runtime/code/run_stage2_realization_shard.py
+          cp .github/overlays/stage2_openalex_extract.py runtime/code/src/stage2_openalex_extract.py
+          printf '\n' >> runtime/code/src/stage2_openalex_extract.py
+          cat .github/overlays/stage2_institution_cache_patch.py >> runtime/code/src/stage2_openalex_extract.py
+
+      - name: Install dependencies
+        working-directory: runtime/code
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Download verified full-sample input bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: tem-stage2-full-input-${{ github.run_id }}
+          path: runtime/input
+
+      - name: Restore restartable OpenAlex cache
+        id: cache-openalex
+        uses: actions/cache/restore@v4
+        with:
+          path: runtime/openalex_cache
+          key: tem-stage2-full-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            tem-stage2-full-shard-${{ matrix.shard }}-
+            tem-stage2-realization-pilot-
+
+      - name: Run full realization extraction shard ${{ matrix.shard }}
+        id: shard
+        continue-on-error: true
+        working-directory: runtime/code
+        env:
+          PYTHONPATH: '.'
+        shell: bash
+        run: |
+          set +e
+          python run_stage2_realization_shard.py \
+            --projects ../input/v3_input/risk_set_full_firm_projects_input_v3.csv \
+            --strict-panel ../input/v3_input/author_project_panel_v3_strict.csv \
+            --assignment ../input/full_shard_assignment.csv \
+            --shard-index ${{ matrix.shard }} \
+            --shard-count 5 \
+            --cache-dir ../openalex_cache \
+            --output-dir ../shard_outputs \
+            --field-fetch-top-n 100 \
+            --main-field-top-n 50 \
+            --sensitivity-field-top-n 100 \
+            --university-min-works 5 \
+            --cognitive-batch-size 20 \
+            2>&1 | tee ../shard_outputs/shard.log
+          code=${PIPESTATUS[0]}
+          echo "$code" | tee ../shard_outputs/shard_exit_code.txt
+          exit "$code"
+
+      - name: Save restartable shard cache checkpoint
+        id: save-openalex
+        if: always() && steps.cache-openalex.outcome == 'success' && steps.shard.outcome != 'skipped'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: runtime/openalex_cache
+          key: tem-stage2-full-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Record shard diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set -u
+          mkdir -p runtime/shard_outputs
+          {
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "commit=${GITHUB_SHA}"
+            echo "shard=${{ matrix.shard }}"
+            echo "cache_hit=${{ steps.cache-openalex.outputs.cache-hit }}"
+            echo "cache_matched_key=${{ steps.cache-openalex.outputs.cache-matched-key }}"
+            echo "cache_save_outcome=${{ steps.save-openalex.outcome }}"
+            echo "shard_outcome=${{ steps.shard.outcome }}"
+            echo "utc_finished=$(date -u +%FT%TZ)"
+          } | tee runtime/shard_outputs/github_run_metadata.txt
+          du -sh runtime/openalex_cache runtime/shard_outputs 2>/dev/null || true
+          find runtime/shard_outputs -maxdepth 2 -type f -printf '%p\t%s bytes\n' | sort || true
+          test -z "$(find runtime -type f -name openalex_api_key.txt -print -quit 2>/dev/null)"
+
+      - name: Upload compact shard outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tem-stage2-full-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            runtime/shard_outputs/shard_projects.csv
+            runtime/shard_outputs/shard_strict_panel.csv
+            runtime/shard_outputs/shard_config.json
+            runtime/shard_outputs/shard_summary.json
+            runtime/shard_outputs/project_details.csv
+            runtime/shard_outputs/natural_candidate_audit_top50.csv
+            runtime/shard_outputs/natural_candidate_audit_top100.csv
+            runtime/shard_outputs/cognitive_candidate_long_top50.csv
+            runtime/shard_outputs/cognitive_candidate_long_top100.csv
+            runtime/shard_outputs/project_realization_metrics_top50.csv
+            runtime/shard_outputs/project_realization_metrics_top100.csv
+            runtime/shard_outputs/shard_time_provenance_audit.json
+            runtime/shard_outputs/shard_exit_code.txt
+            runtime/shard_outputs/shard.log
+            runtime/shard_outputs/github_run_metadata.txt
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 6
+
+      - name: Enforce shard exit status
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          exit_file=runtime/shard_outputs/shard_exit_code.txt
+          test -s "$exit_file"
+          code="$(tr -d '\r\n' < "$exit_file")"
+          case "$code" in
+            ''|*[!0-9]*)
+              echo "Invalid shard exit code"
+              exit 1
+              ;;
+          esac
+          echo "shard=${{ matrix.shard }} exit_code=$code"
+          test "$code" -eq 0
+
+  merge:
+    needs: extract
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Check out full-expansion branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Reconstruct global model code
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/code runtime/input runtime/shards runtime/full_outputs
+          python .github/scripts/reconstruct_stage2_payload.py \
+            --parts 'tem_stage2_v5_payload/code/part_*.b64' \
+            --destination runtime/code \
+            --required run_stage2_v5_relationship_transition.py \
+            --required requirements.txt
+          cp .github/overlays/stage2_pilot_metrics.py runtime/code/stage2_pilot_metrics.py
+          cp .github/overlays/stage2_pilot_models.py runtime/code/stage2_pilot_models.py
+          cp .github/overlays/stage2_compot_stagea.py runtime/code/stage2_compot_stagea.py
+          cp .github/overlays/stage2_compot_models.py runtime/code/stage2_compot_models.py
+          cp .github/overlays/stage2_compot_conflict.py runtime/code/stage2_compot_conflict.py
+          cp .github/overlays/run_stage2_full_merge.py runtime/code/run_stage2_full_merge.py
+
+      - name: Install dependencies
+        working-directory: runtime/code
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Download verified full-sample input bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: tem-stage2-full-input-${{ github.run_id }}
+          path: runtime/input
+
+      - name: Download all five shard outputs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tem-stage2-full-shard-*-${{ github.run_id }}-*
+          path: runtime/shards
+          merge-multiple: false
+
+      - name: Verify shard completion and run global merge
+        id: fullmerge
+        continue-on-error: true
+        working-directory: runtime/code
+        env:
+          PYTHONPATH: '.'
+        shell: bash
+        run: |
+          set +e
+          args=()
+          for shard in 0 1 2 3 4; do
+            dir="$(find ../shards -maxdepth 1 -type d -name "tem-stage2-full-shard-${shard}-${GITHUB_RUN_ID}-*" -print -quit)"
+            if [ -z "$dir" ]; then
+              echo "Missing shard artifact directory for shard $shard" | tee -a ../full_outputs/full_merge.log
+              echo 91 > ../full_outputs/full_merge_exit_code.txt
+              exit 91
+            fi
+            exit_file="$dir/shard_exit_code.txt"
+            if [ ! -s "$exit_file" ]; then
+              echo "Missing shard exit code for shard $shard" | tee -a ../full_outputs/full_merge.log
+              echo 92 > ../full_outputs/full_merge_exit_code.txt
+              exit 92
+            fi
+            shard_code="$(tr -d '\r\n' < "$exit_file")"
+            if [ "$shard_code" != "0" ]; then
+              echo "Shard $shard failed with exit code $shard_code" | tee -a ../full_outputs/full_merge.log
+              echo 93 > ../full_outputs/full_merge_exit_code.txt
+              exit 93
+            fi
+            args+=(--shard-dir "$dir")
+          done
+
+          python run_stage2_full_merge.py \
+            "${args[@]}" \
+            --strict-panel ../input/v3_input/author_project_panel_v3_strict.csv \
+            --output-dir ../full_outputs \
+            --bootstrap-reps 1000 \
+            --expected-projects 1881 \
+            2>&1 | tee ../full_outputs/full_merge.log
+          code=${PIPESTATUS[0]}
+          echo "$code" | tee ../full_outputs/full_merge_exit_code.txt
+          exit "$code"
+
+      - name: Upload final full Stage 2 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tem-stage2-full-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/full_outputs
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 6
+
+      - name: Enforce global merge exit status
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          exit_file=runtime/full_outputs/full_merge_exit_code.txt
+          test -s "$exit_file"
+          code="$(tr -d '\r\n' < "$exit_file")"
+          case "$code" in
+            ''|*[!0-9]*)
+              echo "Invalid full merge exit code"
+              exit 1
+              ;;
+          esac
+          echo "full_merge_exit_code=$code"
+          test "$code" -eq 0
