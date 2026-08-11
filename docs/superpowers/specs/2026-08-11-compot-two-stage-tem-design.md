@@ -35,10 +35,12 @@ Use all **6,536 unique projects** in `author_project_panel_v3_strict.csv`.
 
 Project-level outcome:
 
-- `firm_participation = 1` if the project belongs to the validated 1,881-project Stage 2 universe.
-- `firm_participation = 0` otherwise.
+- primary source: the strict panel's project-consistent `firm_participation` field;
+- cross-check: `firm_participation = 1` must correspond exactly to membership in the validated 1,881-project Stage 2 universe.
 
 The Stage A dataset must contain one row per `work_id`. If the strict panel contains multiple focal-author rows for a project, project-level fields must be checked for within-project consistency before deduplication.
+
+**Selection boundary:** Stage A is conditional on entry into the V3 strict analytic sample. The 6,536 projects are not the universe of all scientific projects; they have already passed the upstream focal-author/score-matching eligibility process and have observed COMPOT. Stage A conclusions therefore describe variation in firm participation **within this strict eligible project population** and must not be generalized to projects excluded before the strict-sample stage without a separate selection analysis.
 
 ### 3.2 Stage B population
 
@@ -84,11 +86,11 @@ Use heteroskedasticity-robust standard errors. If a valid focal-author clusterin
 
 ### 4.3 Stage A interpretation
 
-Treat the results as associational. Do not claim that COMPOT causally causes firm participation.
+Treat the results as associational and conditional on V3 strict-sample eligibility. Do not claim that COMPOT causally causes firm participation or that the estimated association represents projects excluded by the upstream sample-construction process.
 
 Permitted interpretation:
 
-> Projects with higher measured commercial potential are more/less likely to involve firm participation, conditional on observed year and field differences.
+> Among projects in the V3 strict eligible sample, projects with higher measured commercial potential are more/less likely to involve firm participation, conditional on observed year and field differences.
 
 ## 5. Stage B COMPOT moderation design
 
@@ -170,7 +172,7 @@ These interpretations remain associational.
 
 The 400-project COMPOT validation is complete when all of the following are true:
 
-1. Stage A 6,536-project dataset passes uniqueness, missingness, and fixed-count checks.
+1. Stage A 6,536-project dataset passes uniqueness, missingness, and fixed-count checks, and the strict-panel `firm_participation` field yields exactly 1,881 positive projects matching the Stage 2 universe.
 2. Stage A descriptive and regression outputs are generated with no unexplained sample loss.
 3. Stage B candidate tables retain nonmissing COMPOT for all 400 projects and candidate rows.
 4. B0/B1/B2 models run on the same eligible temporal train/test projects unless a model-specific mathematical redundancy is explicitly reported.
@@ -197,24 +199,24 @@ The empirical narrative becomes:
 
 ### Stage A — Collaboration emergence
 
-`Scientific project → COMPOT → whether industry participates`
+`Strict-eligible scientific project → COMPOT → whether industry participates`
 
 ### Stage B — Partner realization
 
 `Firm-involved scientific project → technical/cognitive fit + relational embeddedness + COMPOT moderation → which firm is realized`
 
-The central paper contribution remains the distinction between potential matching and realized partnering, now with an explicit upstream extensive margin.
+The central paper contribution remains the distinction between potential matching and realized partnering, now with an explicit upstream extensive margin inside the validated strict-sample population.
 
 ## 10. Required implementation components
 
 Create focused additions rather than rewriting the validated pilot pipeline:
 
-1. A Stage A analysis module that collapses the strict panel to one project row, constructs `firm_participation`, audits counts, estimates A0–A3, and writes machine-readable outputs.
+1. A Stage A analysis module that collapses the strict panel to one project row, verifies within-project consistency, uses the panel's `firm_participation` outcome, cross-checks it against the 1,881 Stage 2 universe, audits counts, estimates A0–A3, and writes machine-readable outputs.
 2. A Stage B COMPOT extension to the temporal ranking module that creates train-scaled COMPOT interactions and estimates B0–B2.
 3. A COMPOT heterogeneity module or functions that summarize conflict/realization metrics by quartile for Top 50 and Top 100.
 4. Regression tests covering:
    - project-level Stage A collapse and 6,536 count contract;
-   - exact 1,881 positive outcomes when reconstructed from the V3 project universe;
+   - exact 1,881 positive outcomes and exact agreement with the V3 Stage 2 project universe;
    - COMPOT main effect excluded from conditional-logit terms;
    - interaction values vary across candidate firms when the candidate-level component varies;
    - scaling fitted on training projects only;
@@ -259,8 +261,9 @@ A null classification is valid and must not be converted into a positive claim.
 ## 12. Error handling and reproducibility
 
 - Fail on duplicate project IDs after Stage A collapse.
+- Fail if project-level fields used in Stage A are inconsistent across duplicate focal-author rows.
 - Fail if COMPOT is missing for any Stage A project used in primary models or any Stage B pilot project.
-- Fail if the reconstructed Stage A project count is not 6,536 or positive Stage A outcomes are not 1,881.
+- Fail if the reconstructed Stage A project count is not 6,536, if positive Stage A outcomes are not 1,881, or if positive outcomes do not exactly match the Stage 2 universe.
 - Preserve the existing 400-project sample seed and signature.
 - Preserve time-provenance checks for every candidate-level predictor.
 - Reuse cached/persisted pilot candidate outputs when schema and sample signature match.
@@ -270,13 +273,14 @@ A null classification is valid and must not be converted into a positive claim.
 
 Permitted:
 
-- COMPOT is associated with the emergence of firm participation.
+- Within the V3 strict eligible population, COMPOT is associated with the emergence of firm participation.
 - COMPOT conditions the predictive association between candidate-level fit/relationships and realized partnering.
 - Technical compatibility and relational embeddedness provide distinct or interacting signals for realized partner choice.
 
 Not permitted:
 
 - COMPOT causally causes industry entry without an identification strategy.
+- Stage A estimates automatically generalize to projects excluded before V3 strict-sample construction.
 - A higher cognitive-fit firm is objectively the economically optimal partner.
 - A relation–fit conflict is evidence of inefficiency.
 - The constructed candidate set is the directly observed managerial consideration set.
@@ -285,7 +289,7 @@ Not permitted:
 
 Recommended path:
 
-1. implement and run Stage A on all 6,536 projects;
+1. implement and run Stage A on all 6,536 strict-eligible projects;
 2. implement B0/B1/B2 COMPOT validation using the existing 400-project candidate/cognitive outputs without new OpenAlex extraction whenever valid cached artifacts can be reused;
 3. review the 400-project moderation and conflict heterogeneity results;
 4. freeze the full specification;
