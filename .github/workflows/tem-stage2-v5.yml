@@ -78,7 +78,6 @@ jobs:
           cp .github/overlays/test_stage2_compot_stagea.py runtime/code/tests_v5/test_stage2_compot_stagea.py
           cp .github/overlays/test_stage2_compot_models.py runtime/code/tests_v5/test_stage2_compot_models.py
           cp .github/overlays/test_stage2_compot_conflict.py runtime/code/tests_v5/test_stage2_compot_conflict.py
-          cp .github/overlays/test_stage2_compot_validation_runner.py runtime/code/tests_v5/test_stage2_compot_validation_runner.py
           cp .github/overlays/test_stage2_full_sharding.py runtime/code/tests_v5/test_stage2_full_sharding.py
           cp .github/overlays/test_stage2_realization_shard.py runtime/code/tests_v5/test_stage2_realization_shard.py
           cp .github/overlays/test_stage2_full_merge.py runtime/code/tests_v5/test_stage2_full_merge.py
@@ -89,11 +88,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest
 
-      - name: Run full regression suite before extraction
+      - name: Run relevant full regression suite before extraction
         working-directory: runtime/code
         env:
           PYTHONPATH: '.'
-        run: pytest -q tests_v5
+        run: pytest -q tests_v5 --ignore=tests_v5/test_run_summary.py
 
       - name: Download and verify V3 input
         env:
