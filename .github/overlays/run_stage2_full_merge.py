@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge five extraction shards and estimate the global 1,881-project TEM models."""
+"""Merge five extraction shards and estimate the global TEM Stage 2 models."""
 from __future__ import annotations
 
 import argparse
@@ -42,6 +42,7 @@ def required_full_output_filenames() -> list[str]:
         "full_stageA_compot_descriptives.csv",
         "full_stageA_compot_models.csv",
         "full_stageA_audit.json",
+        "full_realized_company_audit.csv",
         "full_time_provenance_audit.json",
         "full_stage2_summary.json",
     ]
@@ -81,6 +82,55 @@ def merge_shard_candidate_frames(
             f"Merged full candidate panel expected {expected_projects} projects but found {projects}"
         )
     return merged.sort_values(["work_id", "company_id"]).reset_index(drop=True)
+
+
+def build_full_realized_company_audit(
+    frames: list[pd.DataFrame],
+    *,
+    expected_input_projects: int = 1881,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Combine shard realized-company coverage audits and summarize Stage B exclusions."""
+    if not frames:
+        raise ValueError("No realized-company audit frames were provided")
+    audit = pd.concat(frames, ignore_index=True)
+    required = {"work_id", "realized_company_resolved", "stageB_exclusion_reason"}
+    missing = sorted(required - set(audit.columns))
+    if missing:
+        raise ValueError(f"Realized-company audit is missing columns: {missing}")
+    audit["work_id"] = audit["work_id"].astype(str)
+    if audit["work_id"].duplicated().any():
+        duplicate = audit.loc[audit["work_id"].duplicated(keep=False), "work_id"].head().tolist()
+        raise ValueError(f"Duplicate projects in realized-company audit: {duplicate}")
+    if len(audit) != expected_input_projects:
+        raise ValueError(
+            f"Realized-company audit expected {expected_input_projects} projects but found {len(audit)}"
+        )
+
+    resolved = audit["realized_company_resolved"]
+    if resolved.dtype == object:
+        normalized = resolved.astype(str).str.strip().str.lower()
+        allowed = {"true", "false", "1", "0"}
+        bad_values = set(normalized.unique()) - allowed
+        if bad_values:
+            raise ValueError(f"Invalid realized_company_resolved values: {sorted(bad_values)}")
+        resolved = normalized.isin({"true", "1"})
+    else:
+        resolved = resolved.astype(bool)
+    audit["realized_company_resolved"] = resolved
+    audit["stageB_exclusion_reason"] = audit["stageB_exclusion_reason"].fillna("").astype(str)
+    missing_reason = (~resolved) & audit["stageB_exclusion_reason"].eq("")
+    if missing_reason.any():
+        raise ValueError("Unresolved realized-company projects must have an exclusion reason")
+
+    analyzable = int(resolved.sum())
+    excluded = int((~resolved).sum())
+    summary = {
+        "input_projects": int(len(audit)),
+        "stageB_analyzable_projects": analyzable,
+        "stageB_excluded_projects": excluded,
+        "stageB_excluded_share": excluded / len(audit) if len(audit) else 0.0,
+    }
+    return audit.sort_values("work_id").reset_index(drop=True), summary
 
 
 def _aggregate_row(metrics: pd.DataFrame, model: str) -> dict[str, float]:
@@ -129,7 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     shard_indices: set[int] = set()
     provenance: list[dict[str, Any]] = []
     candidate_frames: dict[str, list[pd.DataFrame]] = {"top50": [], "top100": []}
-    project_sets: list[set[str]] = []
+    input_project_sets: list[set[str]] = []
+    realized_company_audits: list[pd.DataFrame] = []
 
     for directory in args.shard_dir:
         summary_path = directory / "shard_summary.json"
@@ -145,17 +196,43 @@ def main(argv: list[str] | None = None) -> int:
         summaries.append(summary)
 
         shard_projects = pd.read_csv(directory / "shard_projects.csv")
-        ids = set(shard_projects["work_id"].astype(str))
-        for previous in project_sets:
-            overlap = ids & previous
+        input_ids = set(shard_projects["work_id"].astype(str))
+        for previous in input_project_sets:
+            overlap = input_ids & previous
             if overlap:
                 raise ValueError(f"Shard project sets overlap: {sorted(overlap)[:5]}")
-        project_sets.append(ids)
+        input_project_sets.append(input_ids)
+
+        audit_frame = shard_projects[["work_id"]].copy()
+        audit_frame["work_id"] = audit_frame["work_id"].astype(str)
+        audit_frame["realized_company_resolved"] = True
+        audit_frame["stageB_exclusion_reason"] = ""
+        exclusions = summary.get("stageB_exclusions", []) or []
+        exclusion_ids: set[str] = set()
+        for item in exclusions:
+            work_id = str(item.get("work_id", ""))
+            reason = str(item.get("stageB_exclusion_reason", ""))
+            if work_id not in input_ids:
+                raise ValueError(f"Shard exclusion is outside input universe: {work_id}")
+            if not reason:
+                raise ValueError(f"Shard exclusion has no reason: {work_id}")
+            exclusion_ids.add(work_id)
+            mask = audit_frame["work_id"].eq(work_id)
+            audit_frame.loc[mask, "realized_company_resolved"] = False
+            audit_frame.loc[mask, "stageB_exclusion_reason"] = reason
+        analysis_ids = input_ids - exclusion_ids
+        expected_analysis = int(summary.get("stageB_analyzable_projects", len(analysis_ids)))
+        if len(analysis_ids) != expected_analysis:
+            raise ValueError(
+                f"Shard {shard_index} analysis count mismatch: {len(analysis_ids)} != {expected_analysis}"
+            )
+        realized_company_audits.append(audit_frame)
+
         for label in ["top50", "top100"]:
             frame = pd.read_csv(directory / f"cognitive_candidate_long_{label}.csv")
             observed = set(frame["work_id"].astype(str).unique())
-            if observed != ids:
-                raise ValueError(f"{label} candidate rows do not match shard project IDs")
+            if observed != analysis_ids:
+                raise ValueError(f"{label} candidate rows do not match analyzable shard project IDs")
             candidate_frames[label].append(frame)
         audit = json.loads(
             (directory / "shard_time_provenance_audit.json").read_text(encoding="utf-8")
@@ -166,11 +243,22 @@ def main(argv: list[str] | None = None) -> int:
 
     if shard_indices != set(range(5)):
         raise ValueError(f"Expected shard indices 0..4; found {sorted(shard_indices)}")
-    union_projects = set().union(*project_sets)
-    if len(union_projects) != args.expected_projects:
+    input_union = set().union(*input_project_sets)
+    if len(input_union) != args.expected_projects:
         raise ValueError(
-            f"Merged shard project union expected {args.expected_projects} but found {len(union_projects)}"
+            f"Merged shard input union expected {args.expected_projects} but found {len(input_union)}"
         )
+
+    full_realized_audit, stageb_coverage = build_full_realized_company_audit(
+        realized_company_audits,
+        expected_input_projects=args.expected_projects,
+    )
+    if stageb_coverage["stageB_excluded_share"] > 0.01:
+        raise ValueError(f"Global Stage B exclusion share exceeds 1%: {stageb_coverage}")
+    full_realized_audit.to_csv(
+        args.output_dir / "full_realized_company_audit.csv", index=False
+    )
+    expected_stageb_projects = int(stageb_coverage["stageB_analyzable_projects"])
 
     full_frames: dict[str, pd.DataFrame] = {}
     primary_metrics: dict[str, pd.DataFrame] = {}
@@ -181,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for label in ["top50", "top100"]:
         full = merge_shard_candidate_frames(
-            candidate_frames[label], expected_projects=args.expected_projects
+            candidate_frames[label], expected_projects=expected_stageb_projects
         )
         full.to_csv(
             args.output_dir / f"full_cognitive_candidate_long_{label}.csv", index=False
@@ -278,8 +366,13 @@ def main(argv: list[str] | None = None) -> int:
     summary = {
         "status": "FULL_STAGE2_SOFTWARE_COMPLETE",
         "projects": int(args.expected_projects),
+        "stageB": stageb_coverage,
         "shard_projects": {
             str(int(item["shard_index"])): int(item["projects"]) for item in summaries
+        },
+        "shard_stageB_analyzable_projects": {
+            str(int(item["shard_index"])): int(item["stageB_analyzable_projects"])
+            for item in summaries
         },
         "stageA": {
             "projects": int(stagea_audit["projects"]),
