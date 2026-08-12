@@ -1,6 +1,10 @@
 import pandas as pd
 
-from run_stage2_full_merge import merge_shard_candidate_frames, required_full_output_filenames
+from run_stage2_full_merge import (
+    build_full_realized_company_audit,
+    merge_shard_candidate_frames,
+    required_full_output_filenames,
+)
 
 
 def _candidate(work_id: str, company: str = "C1") -> pd.DataFrame:
@@ -26,6 +30,31 @@ def test_merge_requires_disjoint_project_company_keys_and_complete_project_count
         raise AssertionError("Expected duplicate project-company rejection")
 
 
+def test_full_realized_company_audit_tracks_input_and_analyzable_universes():
+    shard0 = pd.DataFrame({
+        "work_id": ["W1", "W2"],
+        "realized_company_resolved": [True, False],
+        "stageB_exclusion_reason": ["", "NO_REALIZED_COMPANY_IN_OPENALEX"],
+    })
+    shard1 = pd.DataFrame({
+        "work_id": ["W3"],
+        "realized_company_resolved": [True],
+        "stageB_exclusion_reason": [""],
+    })
+
+    audit, summary = build_full_realized_company_audit(
+        [shard0, shard1], expected_input_projects=3
+    )
+
+    assert len(audit) == 3
+    assert summary == {
+        "input_projects": 3,
+        "stageB_analyzable_projects": 2,
+        "stageB_excluded_projects": 1,
+        "stageB_excluded_share": 1 / 3,
+    }
+
+
 def test_full_merge_declares_primary_and_compot_robustness_outputs():
     names = set(required_full_output_filenames())
     assert {
@@ -41,6 +70,7 @@ def test_full_merge_declares_primary_and_compot_robustness_outputs():
         "full_compot_ranking_metrics_top50.csv",
         "full_compot_ranking_coefficients_top100.csv",
         "full_compot_ranking_metrics_top100.csv",
+        "full_realized_company_audit.csv",
         "full_time_provenance_audit.json",
         "full_stage2_summary.json",
     }.issubset(names)
