@@ -38,3 +38,14 @@ def test_validate_summary_rejects_any_frozen_count_mismatch():
     assert not ok
     assert any('goal_total' in p for p in problems)
     assert any('Italy' in p for p in problems)
+
+
+def test_process_match_payload_counts_own_goal_for_in_hard_goal_total():
+    events=[
+        {'id':'og1','index':1,'period':1,'timestamp':'00:08:00.000',
+         'type':{'id':25,'name':'Own Goal For'},
+         'team':{'id':2,'name':'T2'}},
+    ]
+    r=process_match_payload(88,'England',events)
+    assert r['goal_count']==1
+    assert r['anchors']==[]
