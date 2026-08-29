@@ -1,0 +1,76 @@
+name: Temporary StatsBomb 2015-16 extractor
+
+on:
+  push:
+    branches:
+      - tmp-statsbomb-2015-16-extract
+    paths:
+      - '.github/workflows/tmp_statsbomb_extract.yml'
+      - 'tmp_statsbomb_extract/**'
+
+permissions:
+  contents: read
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout temporary branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install minimal dependencies
+        run: python -m pip install --disable-pip-version-check numpy pandas pytest
+
+      - name: Run transport regression tests
+        working-directory: tmp_statsbomb_extract
+        run: pytest -q test_remote_extract.py
+
+      - name: Rebuild and verify exact frozen match set
+        run: |
+          python - <<'PY'
+          import csv, hashlib, json, urllib.request
+          from pathlib import Path
+
+          pin='3bfbffe1de5750ebd47d770be0bb924a10cde54f'
+          pairs={2:'England',7:'France',9:'Germany',11:'Spain',12:'Italy'}
+          expected_n={'England':380,'France':377,'Germany':306,'Spain':380,'Italy':380}
+          expected_sha='25a4d4ad907e3a739dd26b9bacae68c94591c142bc9437746147bde9cb4a8c02'
+          rows=[]
+          for cid,league in pairs.items():
+              url=f'https://raw.githubusercontent.com/hudl/open-data/{pin}/data/matches/{cid}/27.json'
+              req=urllib.request.Request(url,headers={'User-Agent':'statsbomb-replication-extractor/1.0'})
+              with urllib.request.urlopen(req,timeout=90) as r:
+                  matches=json.loads(r.read())
+              if len(matches)!=expected_n[league]:
+                  raise SystemExit(f'{league}: {len(matches)} matches, expected {expected_n[league]}')
+              rows.extend((int(m['match_id']),league) for m in matches)
+          if len(rows)!=1823 or len({g for g,_ in rows})!=1823:
+              raise SystemExit(f'frozen set invalid: rows={len(rows)} unique={len({g for g,_ in rows})}')
+          canon=''.join(f'{g},{league}\n' for g,league in sorted(rows))
+          got=hashlib.sha256(canon.encode()).hexdigest()
+          print('frozen_match_set_sha256',got)
+          if got!=expected_sha:
+              raise SystemExit(f'match-set SHA mismatch: {got} != {expected_sha}')
+          out=Path('tmp_statsbomb_extract/stage1_match_ids_rebuilt.csv')
+          with out.open('w',newline='',encoding='utf-8') as f:
+              w=csv.writer(f); w.writerow(['game_id','league']); w.writerows(sorted(rows))
+          print('wrote',out,'rows',len(rows))
+          PY
+
+      - name: Extract pinned raw anchor candidates
+        run: python tmp_statsbomb_extract/remote_extract.py --match-list tmp_statsbomb_extract/stage1_match_ids_rebuilt.csv --out-dir tmp_statsbomb_extract/output --workers 16
+
+      - name: Upload extraction outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: statsbomb-2015-16-raw-anchor-candidates
+          path: tmp_statsbomb_extract/output
+          if-no-files-found: warn
+          retention-days: 7
