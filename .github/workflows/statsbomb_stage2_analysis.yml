@@ -103,7 +103,7 @@ jobs:
       - name: Run frozen Stage 2 analyses
         run: |
           rm -rf statsbomb_stage2_results
-          python research/run_statsbomb_stage2.py \
+          python -m research.run_statsbomb_stage2 \
             --processed-dir statsbomb_big5_processed \
             --raw-data sb-open-data/data \
             --output-dir statsbomb_stage2_results
