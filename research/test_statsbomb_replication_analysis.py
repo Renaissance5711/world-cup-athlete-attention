@@ -72,6 +72,27 @@ def test_marginality_scores_extreme_target_higher():
     assert q.loc['far','component_atyp_pct']>q.loc['near','component_atyp_pct']
 
 
+def test_marginality_uses_focal_team_own_strict_prior_history():
+    rows=[]
+    for ck in range(1,31):
+        for team,center in [(1,0.0),(2,100.0),(3,100.0)]:
+            r={'game_chron_key':ck,'league':'England','team_id':team}
+            for j,f in enumerate(FEATURES):
+                r[f]=center + (ck-15)*0.01 + j*0.0001
+            rows.append(r)
+    w=pd.DataFrame(rows)
+    targets=[]
+    for key,val in [('own_center',0.0),('peer_center',100.0)]:
+        r={'target_key':key,'game_chron_key':31,'league':'England','team_id':1}
+        for f in FEATURES:
+            r[f]=val
+        targets.append(r)
+    q=historical_marginality_targets(
+        w,pd.DataFrame(targets),min_history=20,max_calibration=1000
+    ).set_index('target_key')
+    assert q.loc['own_center','component_atyp_pct'] < q.loc['peer_center','component_atyp_pct']
+
+
 def test_temporal_and_lolo_predictions_cover_all_test_blocks():
     w=synthetic_windows(); matches=pd.DataFrame({'game_chron_key':np.arange(1,17)})
     folds=make_temporal_folds(matches,8)
