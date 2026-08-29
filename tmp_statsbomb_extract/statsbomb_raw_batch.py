@@ -8,6 +8,7 @@ import pandas as pd
 from statsbomb_radicality_homolog import (
     X_TO_M,
     Y_TO_M,
+    timestamp_to_half_seconds,
     extract_shot_anchors,
     signed_six_component_change,
 )
@@ -30,6 +31,78 @@ def _two_match_teams(events):
         if tid is not None:
             teams[tid]=_team_name(e)
     return teams
+
+
+CONTINUITY_INTERCEPT = -1.6550033604199785
+CONTINUITY_MAX_STREAK_W = 0.17385372336959271
+CONTINUITY_LONG_STREAK_SHARE_W = 0.83146291307747178
+CONTINUITY_RATE_W = 1.3962837347982049
+
+
+def _is_completed_pass(e: Mapping[str, Any]) -> bool:
+    if (e.get('type') or {}).get('name') != 'Pass':
+        return False
+    p = e.get('pass') if isinstance(e.get('pass'), Mapping) else {}
+    return p.get('outcome') is None
+
+
+def continuity_primitives(
+    events: Iterable[Mapping[str, Any]],
+    team_id,
+    period: int,
+    start_t: float,
+    end_t: float,
+) -> dict[str, float]:
+    rows=[]
+    for e in events:
+        if int(e.get('period', -1)) != int(period):
+            continue
+        if (e.get('type') or {}).get('name') != 'Pass':
+            continue
+        t=timestamp_to_half_seconds(e.get('timestamp'))
+        if t is None or not (float(start_t) <= float(t) < float(end_t)):
+            continue
+        rows.append((int(e.get('index', 0)), float(t), e))
+    rows.sort(key=lambda z:(z[0], z[1]))
+
+    pass_n=0
+    success_n=0
+    streaks=[]
+    cur=0
+    for _,_,e in rows:
+        focal = _team_id(e) == team_id
+        good = focal and _is_completed_pass(e)
+        if focal:
+            pass_n += 1
+        if good:
+            success_n += 1
+            cur += 1
+        else:
+            if cur:
+                streaks.append(cur)
+                cur=0
+    if cur:
+        streaks.append(cur)
+
+    max_streak=max(streaks) if streaks else 0
+    if success_n:
+        long_share=sum(v for v in streaks if v >= 3) / success_n
+        continuation=sum(max(0, v-1) for v in streaks) / success_n
+    else:
+        long_share=0.0
+        continuation=0.0
+    score=(CONTINUITY_INTERCEPT
+           + CONTINUITY_MAX_STREAK_W*max_streak
+           + CONTINUITY_LONG_STREAK_SHARE_W*long_share
+           + CONTINUITY_RATE_W*continuation)
+    return {
+        'pass_n_continuity': int(pass_n),
+        'successful_pass_n': int(success_n),
+        'max_streak': int(max_streak),
+        'long_streak_share': float(long_share),
+        'continuation_rate': float(continuation),
+        'observed_continuity_homolog': float(score),
+    }
 
 
 def build_match_anchor_candidates(
@@ -89,5 +162,13 @@ def build_match_anchor_candidates(
             'shot_y_m':y_m,
         }
         row.update(comp)
+        response_cont=continuity_primitives(
+            events, defending_team_id, int(s.half), float(s.t)+180.0, float(s.t)+300.0
+        )
+        recovery_cont=continuity_primitives(
+            events, defending_team_id, int(s.half), float(s.t)+300.0, float(s.t)+420.0
+        )
+        row.update({f'response_{k}':v for k,v in response_cont.items()})
+        row.update({f'recovery_{k}':v for k,v in recovery_cont.items()})
         rows.append(row)
     return pd.DataFrame(rows)
