@@ -9,6 +9,8 @@ on:
       - 'research/statsbomb_replication_analysis.py'
       - 'research/test_statsbomb_replication_analysis.py'
       - 'research/run_statsbomb_stage2.py'
+      - 'research/historical_marginality_own.py'
+      - 'research/run_statsbomb_stage2_frozen.py'
   workflow_dispatch:
 
 permissions:
@@ -103,7 +105,7 @@ jobs:
       - name: Run frozen Stage 2 analyses
         run: |
           rm -rf statsbomb_stage2_results
-          python -m research.run_statsbomb_stage2 \
+          python -m research.run_statsbomb_stage2_frozen \
             --processed-dir statsbomb_big5_processed \
             --raw-data sb-open-data/data \
             --output-dir statsbomb_stage2_results
@@ -120,6 +122,7 @@ jobs:
           assert m['eligible_2min_windows']==158121,m
           assert m['eligible_goal_anchors']>100,m
           assert m['eligible_miss_anchors']>100,m
+          assert m['M_reference_freeze']=='organization-specific own strict-prior H0',m
           j=pd.read_csv(p/'J_validation_overall.csv')
           assert len(j)==2 and j.auc.notna().all(),j
           f=pd.read_csv(p/'Figure5_StatsBomb_Directional_Audit.csv')
