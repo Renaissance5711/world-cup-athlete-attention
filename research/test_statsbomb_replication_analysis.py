@@ -6,10 +6,10 @@ from research.statsbomb_replication_analysis import (
     make_temporal_folds,
     sufficient_rows,
     config_from_interval,
-    historical_marginality_targets,
     temporal_oos_predictions,
     lolo_temporal_predictions,
 )
+from research.historical_marginality_own import historical_marginality_targets
 
 FEATURES=[
     'mean_pass_length','mean_dx','mean_abs_dy','mean_x1','mean_x2',
