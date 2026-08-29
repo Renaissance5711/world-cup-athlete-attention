@@ -36,8 +36,15 @@ def _shot_outcome_name(e):
     return out.get('name')
 
 
+def _is_score_goal_event(e):
+    if not isinstance(e, dict):
+        return False
+    event_type = (e.get('type') or {}).get('name')
+    return event_type == 'Own Goal For' or (event_type == 'Shot' and _shot_outcome_name(e) == 'Goal')
+
+
 def process_match_payload(game_id: int, league: str, events: list[dict]) -> dict:
-    goal_count = sum(_shot_outcome_name(e) == 'Goal' for e in events)
+    goal_count = sum(_is_score_goal_event(e) for e in events)
     anchors_df = build_match_anchor_candidates(events, match_id=int(game_id), league=str(league))
     anchors = anchors_df.to_dict(orient='records') if not anchors_df.empty else []
     return {
