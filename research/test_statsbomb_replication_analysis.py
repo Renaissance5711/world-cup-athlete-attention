@@ -64,7 +64,8 @@ def test_marginality_scores_extreme_target_higher():
             for j,f in enumerate(FEATURES):r[f]=50+(team-2)*.2+ck*.01+j*.001
             rows.append(r)
     w=pd.DataFrame(rows); targets=[]
-    for key,val in [('near',50.2),('far',90.0)]:
+    # Team 1's own strict-prior history is centered near 49.95; 90 is far outside it.
+    for key,val in [('near',49.95),('far',90.0)]:
         r={'target_key':key,'game_chron_key':31,'league':'England','team_id':1}
         for f in FEATURES:r[f]=val
         targets.append(r)
