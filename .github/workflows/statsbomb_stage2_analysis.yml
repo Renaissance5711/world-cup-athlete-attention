@@ -1,0 +1,141 @@
+name: StatsBomb Big Five 2015-16 Stage 2 analysis
+
+on:
+  push:
+    branches:
+      - statsbomb-big5-replication-20260829
+    paths:
+      - '.github/workflows/statsbomb_stage2_analysis.yml'
+      - 'research/statsbomb_replication_analysis.py'
+      - 'research/test_statsbomb_replication_analysis.py'
+      - 'research/run_statsbomb_stage2.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  STATSBOMB_PIN: 3bfbffe1de5750ebd47d770be0bb924a10cde54f
+  SOURCE_RUN_ID: '33238188825'
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Check out replication branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install analysis dependencies
+        run: python -m pip install --upgrade pip pandas numpy pyarrow scikit-learn scipy statsmodels matplotlib pytest
+
+      - name: Run Stage 2 unit tests
+        run: pytest -q research/test_statsbomb_external_runner.py research/test_statsbomb_replication_analysis.py
+
+      - name: Download frozen processed artifact from Stage 1
+        uses: actions/download-artifact@v4
+        with:
+          name: statsbomb-big5-2015-16-12d-processed
+          path: statsbomb_big5_processed
+          github-token: ${{ github.token }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+
+      - name: Verify frozen Stage 1 artifact
+        run: |
+          python - <<'PY'
+          import json, pandas as pd
+          from pathlib import Path
+          p=Path('statsbomb_big5_processed')
+          m=json.loads((p/'manifest.json').read_text())
+          assert m['pinned_commit']=='3bfbffe1de5750ebd47d770be0bb924a10cde54f'
+          assert m['processed_matches']==1823
+          assert m['eligible_windows']==158121
+          assert m['passes']==1777412
+          c=pd.read_csv(p/'coverage_verified.csv')
+          assert int(c.processed_matches.sum())==1823
+          print(json.dumps(m,indent=2))
+          PY
+
+      - name: Fetch pinned StatsBomb raw events for pooled Goal/Miss anchor definition
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf sb-open-data
+          git init sb-open-data
+          cd sb-open-data
+          git remote add origin https://github.com/hudl/open-data.git
+          git -c protocol.version=2 fetch --depth=1 --filter=blob:none origin "$STATSBOMB_PIN"
+          git sparse-checkout init --no-cone
+          cat > sparse.txt <<'EOF'
+          /data/matches/2/27.json
+          /data/matches/7/27.json
+          /data/matches/9/27.json
+          /data/matches/11/27.json
+          /data/matches/12/27.json
+          EOF
+          git sparse-checkout set --no-cone --stdin < sparse.txt
+          git checkout --detach FETCH_HEAD
+          python - <<'PY' > sparse_all.txt
+          import json
+          from pathlib import Path
+          root=Path('data/matches')
+          specs=[(2,27,380),(7,27,377),(9,27,306),(11,27,380),(12,27,380)]
+          paths=[]; total=0
+          for comp,season,expected in specs:
+              d=json.loads((root/str(comp)/f'{season}.json').read_text())
+              assert len(d)==expected,(comp,season,len(d),expected)
+              total += len(d)
+              paths.append(f'/data/matches/{comp}/{season}.json')
+              paths.extend(f'/data/events/{int(m["match_id"])}.json' for m in d)
+          assert total==1823,total
+          print('\n'.join(paths))
+          PY
+          git sparse-checkout set --no-cone --stdin < sparse_all.txt
+          test "$(find data/events -maxdepth 1 -name '*.json' | wc -l)" -eq 1823
+          du -sh data
+
+      - name: Run frozen Stage 2 analyses
+        run: |
+          rm -rf statsbomb_stage2_results
+          python research/run_statsbomb_stage2.py \
+            --processed-dir statsbomb_big5_processed \
+            --raw-data sb-open-data/data \
+            --output-dir statsbomb_stage2_results
+
+      - name: Verify Stage 2 outputs
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, pandas as pd
+          from pathlib import Path
+          p=Path('statsbomb_stage2_results')
+          m=json.loads((p/'stage2_manifest.json').read_text())
+          assert m['processed_matches']==1823,m
+          assert m['eligible_2min_windows']==158121,m
+          assert m['eligible_goal_anchors']>100,m
+          assert m['eligible_miss_anchors']>100,m
+          j=pd.read_csv(p/'J_validation_overall.csv')
+          assert len(j)==2 and j.auc.notna().all(),j
+          f=pd.read_csv(p/'Figure5_StatsBomb_Directional_Audit.csv')
+          assert len(f)>0
+          print(json.dumps(m,indent=2))
+          print(j.to_string(index=False))
+          print(pd.read_csv(p/'Figure5_StatsBomb_Quadrants.csv').to_string(index=False))
+          print(pd.read_csv(p/'Figure5_StatsBomb_Tests.csv').to_string(index=False))
+          PY
+          (cd statsbomb_stage2_results && sha256sum * > SHA256SUMS.txt)
+          ls -lh statsbomb_stage2_results
+
+      - name: Upload Stage 2 results
+        uses: actions/upload-artifact@v4
+        with:
+          name: statsbomb-big5-2015-16-stage2-results
+          path: statsbomb_stage2_results/
+          retention-days: 7
+          compression-level: 6
