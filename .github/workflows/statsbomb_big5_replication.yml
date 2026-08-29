@@ -1,0 +1,119 @@
+name: StatsBomb Big Five 2015-16 replication
+
+on:
+  push:
+    branches:
+      - statsbomb-big5-replication-20260829
+    paths:
+      - '.github/workflows/statsbomb_big5_replication.yml'
+      - 'research/statsbomb_external_runner.py'
+      - 'research/test_statsbomb_external_runner.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  STATSBOMB_PIN: 3bfbffe1de5750ebd47d770be0bb924a10cde54f
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out replication branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install analysis dependencies
+        run: python -m pip install --upgrade pip pandas numpy pyarrow pytest
+
+      - name: Run unit tests
+        run: pytest -q research/test_statsbomb_external_runner.py
+
+      - name: Fetch pinned StatsBomb match metadata sparsely
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf sb-open-data
+          git init sb-open-data
+          cd sb-open-data
+          git remote add origin https://github.com/hudl/open-data.git
+          git -c protocol.version=2 fetch --depth=1 --filter=blob:none origin "$STATSBOMB_PIN"
+          git sparse-checkout init --no-cone
+          cat > sparse.txt <<'EOF'
+          /data/matches/2/27.json
+          /data/matches/7/27.json
+          /data/matches/9/27.json
+          /data/matches/11/27.json
+          /data/matches/12/27.json
+          EOF
+          git sparse-checkout set --no-cone --stdin < sparse.txt
+          git checkout --detach FETCH_HEAD
+
+      - name: Expand sparse checkout to the exact 1,823 event files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' > sb-open-data/sparse_all.txt
+          import json
+          from pathlib import Path
+          root=Path('sb-open-data/data/matches')
+          specs=[(2,27,380),(7,27,377),(9,27,306),(11,27,380),(12,27,380)]
+          paths=[]
+          total=0
+          for comp,season,expected in specs:
+              p=root/str(comp)/f'{season}.json'
+              d=json.loads(p.read_text())
+              if len(d)!=expected:
+                  raise SystemExit(f'coverage failure {comp}/{season}: expected {expected}, got {len(d)}')
+              total += len(d)
+              paths.append(f'/data/matches/{comp}/{season}.json')
+              paths.extend(f'/data/events/{int(m["match_id"])}.json' for m in d)
+          if total != 1823:
+              raise SystemExit(f'total coverage failure: {total}')
+          print('\n'.join(paths))
+          PY
+          cd sb-open-data
+          git sparse-checkout set --no-cone --stdin < sparse_all.txt
+          test "$(find data/events -maxdepth 1 -name '*.json' | wc -l)" -eq 1823
+          du -sh data
+
+      - name: Build frozen 12D pass, spell, goal and window panels
+        run: |
+          set -euo pipefail
+          rm -rf statsbomb_big5_output
+          python research/statsbomb_external_runner.py --data-root sb-open-data/data --output-dir statsbomb_big5_output
+
+      - name: Verify artifacts and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, pandas as pd
+          from pathlib import Path
+          out=Path('statsbomb_big5_output')
+          m=json.loads((out/'manifest.json').read_text())
+          assert m['processed_matches']==1823, m
+          c=pd.read_csv(out/'coverage_verified.csv')
+          assert int(c.processed_matches.sum())==1823
+          assert int(c.passes.sum())>1_000_000
+          assert int(c.eligible_windows.sum())>50_000
+          assert (c.windows_with_spell_starts>0).all()
+          print(c.to_string(index=False))
+          print(json.dumps(m,indent=2))
+          PY
+          (cd statsbomb_big5_output && sha256sum * > SHA256SUMS.txt)
+          ls -lh statsbomb_big5_output
+
+      - name: Upload processed replication artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: statsbomb-big5-2015-16-12d-processed
+          path: statsbomb_big5_output/
+          retention-days: 7
+          compression-level: 6
